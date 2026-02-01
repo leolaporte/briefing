@@ -1,0 +1,16 @@
+[package]
+name = "prepare-briefing"
+version = "0.1.0"
+edition = "2021"
+authors = ["Leo Laporte"]
+
+[[bin]]
+name = "prepare-briefing"
+path = "src/main.rs"
+
+[dependencies]
+shared = { path = "../shared" }
+anyhow = { workspace = true }
+chrono = { workspace = true }
+dirs = { workspace = true }
+clap = { workspace = true }

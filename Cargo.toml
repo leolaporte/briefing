@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/collect-stories",
+    "crates/prepare-briefing",
     "crates/shared",
 ]
 resolver = "2"
@@ -18,3 +19,4 @@ dotenvy = "0.15"
 html2text = "0.12"
 urlencoding = "2.1"
 dirs = "5.0"
+scraper = "0.20"

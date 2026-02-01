@@ -2,8 +2,8 @@ use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
 use clap::Parser;
 use shared::{
-    ClaudeSummarizer, Config, ContentExtractor, RaindropClient, ShowInfo, Story, Summary,
-    TopicClusterer,
+    ArticleContent, ClaudeSummarizer, Config, ContentExtractor, RaindropClient, ShowInfo, Story,
+    Summary, TopicClusterer,
 };
 use std::collections::HashMap;
 use std::io::{self as stdio, Write};
@@ -107,8 +107,8 @@ async fn main() -> Result<()> {
     let urls: Vec<String> = bookmarks.iter().map(|b| b.link.clone()).collect();
     let content_results = extractor.fetch_articles_parallel(urls).await;
 
-    // Create a map of URL -> Content for correct pairing
-    let content_map: HashMap<String, String> = content_results
+    // Create a map of URL -> ArticleContent for correct pairing
+    let content_map: HashMap<String, ArticleContent> = content_results
         .into_iter()
         .filter_map(|(url, content)| content.map(|c| (url, c)))
         .collect();
@@ -143,7 +143,7 @@ async fn main() -> Result<()> {
 
     let articles_for_summary: Vec<(String, String)> = articles_with_content
         .iter()
-        .map(|(bookmark, content)| (bookmark.link.clone(), content.clone()))
+        .map(|(bookmark, content)| (bookmark.link.clone(), content.text.clone()))
         .collect();
 
     let summary_results = summarizer
@@ -155,12 +155,20 @@ async fn main() -> Result<()> {
 
     let stories: Vec<Story> = articles_with_content
         .iter()
-        .filter_map(|(bookmark, _)| {
-            summary_map.get(&bookmark.link).map(|summary| Story {
-                title: bookmark.title.clone(),
-                url: bookmark.link.clone(),
-                created: bookmark.created.clone(),
-                summary: summary.clone(),
+        .filter_map(|(bookmark, article_content)| {
+            summary_map.get(&bookmark.link).map(|summary| {
+                // Use extracted publication date if available, otherwise fall back to bookmark creation date
+                let created = article_content
+                    .published_date
+                    .clone()
+                    .unwrap_or_else(|| bookmark.created.clone());
+
+                Story {
+                    title: bookmark.title.clone(),
+                    url: bookmark.link.clone(),
+                    created,
+                    summary: summary.clone(),
+                }
             })
         })
         .collect();

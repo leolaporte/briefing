@@ -48,13 +48,18 @@ impl BriefingGenerator {
     pub fn generate(topics: &[Topic], show_name: &str, date: DateTime<Utc>) -> String {
         let mut html = String::new();
 
+        // Format date as "Sunday, 1 February 2026"
+        let formatted_date = date.format("%A, %-d %B %Y").to_string();
+
         // HTML header with styling
         html.push_str("<!DOCTYPE html>\n<html>\n<head>\n");
         html.push_str("  <meta charset=\"UTF-8\">\n");
-        html.push_str(&format!("  <title>{} Briefing - {}</title>\n", show_name, date.format("%Y-%m-%d")));
+        html.push_str(&format!("  <title>{} Briefing - {}</title>\n", show_name, formatted_date));
         html.push_str("  <style>\n");
         html.push_str("    body { font-family: Arial, sans-serif; max-width: 900px; margin: 40px auto; padding: 0 20px; line-height: 1.6; }\n");
-        html.push_str("    h1 { color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; }\n");
+        html.push_str("    h1 { color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; text-align: center; }\n");
+        html.push_str("    h1 .show-name { display: block; font-size: 1.2em; margin-bottom: 10px; }\n");
+        html.push_str("    h1 .date { display: block; font-size: 0.8em; font-weight: normal; color: #555; }\n");
         html.push_str("    h2 { color: #34495e; margin: 0; padding: 10px; background-color: #ecf0f1; border-left: 4px solid #3498db; }\n");
         html.push_str("    h3 { color: #2c3e50; margin-top: 25px; }\n");
         html.push_str("    .metadata { color: #7f8c8d; font-size: 0.9em; margin: 5px 0; }\n");
@@ -74,16 +79,16 @@ impl BriefingGenerator {
         html.push_str("  </style>\n");
         html.push_str("</head>\n<body>\n");
 
-        // Main title
+        // Main title (two lines)
         html.push_str(&format!(
-            "<h1>{} Briefing - {}</h1>\n",
+            "<h1><span class=\"show-name\">{} Briefing</span><span class=\"date\">{}</span></h1>\n",
             show_name,
-            date.format("%Y-%m-%d")
+            formatted_date
         ));
 
         // Topics
         for topic in topics {
-            html.push_str("<details class=\"topic\" open>\n");
+            html.push_str("<details class=\"topic\">\n");
             html.push_str(&format!("  <summary><h2>{}</h2></summary>\n", Self::escape_html(&topic.title)));
             html.push_str("  <div>\n");
 
@@ -222,6 +227,11 @@ impl BriefingGenerator {
 
                 // URL
                 org.push_str(&format!("*** URL\n{}\n\n", story.url));
+
+                // Date
+                if !story.created.is_empty() {
+                    org.push_str(&format!("*** Date\n{}\n\n", story.created));
+                }
 
                 // Summary
                 org.push_str("*** Summary\n");

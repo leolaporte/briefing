@@ -16,3 +16,4 @@ dotenvy = { workspace = true }
 html2text = { workspace = true }
 urlencoding = { workspace = true }
 dirs = { workspace = true }
+scraper = { workspace = true }

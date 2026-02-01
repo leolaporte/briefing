@@ -79,13 +79,39 @@ impl TopicClusterer {
             }]);
         }
 
-        match self.try_cluster_with_ai(&stories).await {
-            Ok(topics) => Ok(topics),
-            Err(e) => {
-                eprintln!("Clustering failed: {}, using chronological fallback", e);
-                Ok(self.fallback_chronological(stories))
+        // Retry logic with exponential backoff for rate limits
+        for attempt in 0..5 {
+            match self.try_cluster_with_ai(&stories).await {
+                Ok(topics) => return Ok(topics),
+                Err(e) => {
+                    let error_msg = e.to_string();
+                    let is_rate_limit = error_msg.contains("rate_limit") || error_msg.contains("429");
+
+                    if attempt == 4 {
+                        eprintln!("Clustering failed after {} attempts: {}, using chronological fallback", attempt + 1, e);
+                        return Ok(self.fallback_chronological(stories));
+                    }
+
+                    // Longer backoff for rate limits
+                    let backoff = if is_rate_limit {
+                        std::time::Duration::from_secs(15 * (attempt + 1) as u64)
+                    } else {
+                        std::time::Duration::from_millis(1000 * (2_u64.pow(attempt as u32)))
+                    };
+
+                    if is_rate_limit {
+                        eprintln!("Rate limit hit during clustering, waiting {:?} before retry {} of 5...", backoff, attempt + 2);
+                    } else {
+                        eprintln!("Clustering error (attempt {} of 5): {}, retrying after {:?}...", attempt + 1, e, backoff);
+                    }
+
+                    tokio::time::sleep(backoff).await;
+                }
             }
         }
+
+        // This should never be reached due to the attempt == 4 check above, but keeping for safety
+        Ok(self.fallback_chronological(stories))
     }
 
     async fn try_cluster_with_ai(&self, stories: &[Story]) -> Result<Vec<Topic>> {
@@ -157,9 +183,10 @@ Important: Every article index from 0 to {} must appear in exactly one topic."#,
             .await
             .context("Failed to send request to Claude API")?;
 
-        if !response.status().is_success() {
+        let status = response.status();
+        if !status.is_success() {
             let error_text = response.text().await.unwrap_or_else(|_| String::from("unknown error"));
-            anyhow::bail!("Claude API error: {}", error_text);
+            anyhow::bail!("Claude API error (status {}): {}", status.as_u16(), error_text);
         }
 
         let claude_response = response
