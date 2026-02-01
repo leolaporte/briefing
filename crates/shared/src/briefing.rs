@@ -54,11 +54,16 @@ impl BriefingGenerator {
         // HTML header with styling
         html.push_str("<!DOCTYPE html>\n<html>\n<head>\n");
         html.push_str("  <meta charset=\"UTF-8\">\n");
-        html.push_str(&format!("  <title>{} Briefing - {}</title>\n", show_name, formatted_date));
+        html.push_str(&format!(
+            "  <title>{} Briefing - {}</title>\n",
+            show_name, formatted_date
+        ));
         html.push_str("  <style>\n");
         html.push_str("    body { font-family: Arial, sans-serif; max-width: 900px; margin: 40px auto; padding: 0 20px; line-height: 1.6; }\n");
         html.push_str("    h1 { color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; text-align: center; }\n");
-        html.push_str("    h1 .show-name { display: block; font-size: 1.2em; margin-bottom: 10px; }\n");
+        html.push_str(
+            "    h1 .show-name { display: block; font-size: 1.2em; margin-bottom: 10px; }\n",
+        );
         html.push_str("    h1 .date { display: block; font-size: 0.8em; font-weight: normal; color: #555; }\n");
         html.push_str("    h2 { color: #34495e; margin: 0; padding: 10px; background-color: #ecf0f1; border-left: 4px solid #3498db; }\n");
         html.push_str("    h3 { color: #2c3e50; margin-top: 25px; }\n");
@@ -66,9 +71,13 @@ impl BriefingGenerator {
         html.push_str("    .link { color: #3498db; text-decoration: none; }\n");
         html.push_str("    .link:hover { text-decoration: underline; }\n");
         html.push_str("    details.topic { margin: 40px 0 20px 0; }\n");
-        html.push_str("    details.topic > summary { display: block; cursor: pointer; user-select: none; }\n");
+        html.push_str(
+            "    details.topic > summary { display: block; cursor: pointer; user-select: none; }\n",
+        );
         html.push_str("    details.topic > summary:hover h2 { background-color: #d5dbdb; }\n");
-        html.push_str("    details.topic > summary h2::before { content: '▼ '; font-size: 0.8em; }\n");
+        html.push_str(
+            "    details.topic > summary h2::before { content: '▼ '; font-size: 0.8em; }\n",
+        );
         html.push_str("    details.topic:not([open]) > summary h2::before { content: '▶ '; }\n");
         html.push_str("    details.article { margin: 15px 0; padding: 10px; background-color: #f8f9fa; border-radius: 4px; }\n");
         html.push_str("    details.article > summary { display: none; }\n");
@@ -82,20 +91,24 @@ impl BriefingGenerator {
         // Main title (two lines)
         html.push_str(&format!(
             "<h1><span class=\"show-name\">{} Briefing</span><span class=\"date\">{}</span></h1>\n",
-            show_name,
-            formatted_date
+            show_name, formatted_date
         ));
 
         // Topics
         for (index, topic) in topics.iter().enumerate() {
             html.push_str("<details class=\"topic\">\n");
-            html.push_str(&format!("  <summary><h2>{}. {}</h2></summary>\n",
+            html.push_str(&format!(
+                "  <summary><h2>{}. {}</h2></summary>\n",
                 index + 1,
-                Self::escape_html(&topic.title)));
+                Self::escape_html(&topic.title)
+            ));
             html.push_str("  <div>\n");
 
             for story in &topic.stories {
-                html.push_str(&format!("    <h3>{}</h3>\n", Self::escape_html(&story.title)));
+                html.push_str(&format!(
+                    "    <h3>{}</h3>\n",
+                    Self::escape_html(&story.title)
+                ));
                 html.push_str("    <div class=\"metadata\">\n");
                 html.push_str(&format!(
                     "      <strong>Link:</strong> <a href=\"{}\" class=\"link\" target=\"_blank\">{}</a><br>\n",
@@ -113,11 +126,17 @@ impl BriefingGenerator {
                         html.push_str("    <details class=\"article\" open>\n");
                         html.push_str("      <summary></summary>\n");
                         if let Some(q) = quote {
-                            html.push_str(&format!("      <p><em>\"{}\"</em></p>\n", Self::escape_html(q)));
+                            html.push_str(&format!(
+                                "      <p><em>\"{}\"</em></p>\n",
+                                Self::escape_html(q)
+                            ));
                         }
                         html.push_str("      <ul>\n");
                         for point in points.iter() {
-                            html.push_str(&format!("        <li>{}</li>\n", Self::escape_html(point)));
+                            html.push_str(&format!(
+                                "        <li>{}</li>\n",
+                                Self::escape_html(point)
+                            ));
                         }
                         html.push_str("      </ul>\n");
                         html.push_str("    </details>\n");
@@ -168,7 +187,11 @@ impl BriefingGenerator {
                     first_article = false;
                 } else {
                     // Subsequent article rows: blank A, blank B, title in C, blank D, link in E
-                    csv.push_str(&format!(",,{},,{}\n", Self::escape_csv(&story.title), Self::escape_csv(&story.url)));
+                    csv.push_str(&format!(
+                        ",,{},,{}\n",
+                        Self::escape_csv(&story.title),
+                        Self::escape_csv(&story.url)
+                    ));
                 }
             }
 
@@ -255,7 +278,7 @@ impl BriefingGenerator {
                         org.push_str("Summary unavailable\n");
                     }
                 }
-                org.push_str("\n");
+                org.push('\n');
             }
         }
 

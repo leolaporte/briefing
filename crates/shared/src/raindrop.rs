@@ -35,11 +35,7 @@ impl RaindropClient {
         Ok(Self { client, api_token })
     }
 
-    pub async fn fetch_bookmarks(
-        &self,
-        tag: &str,
-        since: DateTime<Utc>,
-    ) -> Result<Vec<Bookmark>> {
+    pub async fn fetch_bookmarks(&self, tag: &str, since: DateTime<Utc>) -> Result<Vec<Bookmark>> {
         let mut all_bookmarks = Vec::new();
         let mut page = 0;
         let per_page = 50;
@@ -65,12 +61,11 @@ impl RaindropClient {
 
             let status = response.status();
             if !status.is_success() {
-                let error_text = response.text().await.unwrap_or_else(|_| String::from("unknown error"));
-                anyhow::bail!(
-                    "Raindrop API returned error: {} - {}",
-                    status,
-                    error_text
-                );
+                let error_text = response
+                    .text()
+                    .await
+                    .unwrap_or_else(|_| String::from("unknown error"));
+                anyhow::bail!("Raindrop API returned error: {} - {}", status, error_text);
             }
 
             let raindrop_response = response

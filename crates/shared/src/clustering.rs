@@ -85,10 +85,15 @@ impl TopicClusterer {
                 Ok(topics) => return Ok(topics),
                 Err(e) => {
                     let error_msg = e.to_string();
-                    let is_rate_limit = error_msg.contains("rate_limit") || error_msg.contains("429");
+                    let is_rate_limit =
+                        error_msg.contains("rate_limit") || error_msg.contains("429");
 
                     if attempt == 4 {
-                        eprintln!("Clustering failed after {} attempts: {}, using chronological fallback", attempt + 1, e);
+                        eprintln!(
+                            "Clustering failed after {} attempts: {}, using chronological fallback",
+                            attempt + 1,
+                            e
+                        );
                         return Ok(self.fallback_chronological(stories));
                     }
 
@@ -102,7 +107,12 @@ impl TopicClusterer {
                     if is_rate_limit {
                         eprintln!("Rate limit hit during clustering, waiting {:?} before retry {} of 5...", backoff, attempt + 2);
                     } else {
-                        eprintln!("Clustering error (attempt {} of 5): {}, retrying after {:?}...", attempt + 1, e, backoff);
+                        eprintln!(
+                            "Clustering error (attempt {} of 5): {}, retrying after {:?}...",
+                            attempt + 1,
+                            e,
+                            backoff
+                        );
                     }
 
                     tokio::time::sleep(backoff).await;
@@ -120,7 +130,9 @@ impl TopicClusterer {
             .enumerate()
             .map(|(idx, story)| {
                 let first_point = match &story.summary {
-                    Summary::Success { points, .. } => points.first().map(|s| s.as_str()).unwrap_or(""),
+                    Summary::Success { points, .. } => {
+                        points.first().map(|s| s.as_str()).unwrap_or("")
+                    }
                     _ => "",
                 };
                 format!("{}: {} - {}", idx, story.title, first_point)
@@ -185,8 +197,15 @@ Important: Every article index from 0 to {} must appear in exactly one topic."#,
 
         let status = response.status();
         if !status.is_success() {
-            let error_text = response.text().await.unwrap_or_else(|_| String::from("unknown error"));
-            anyhow::bail!("Claude API error (status {}): {}", status.as_u16(), error_text);
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| String::from("unknown error"));
+            anyhow::bail!(
+                "Claude API error (status {}): {}",
+                status.as_u16(),
+                error_text
+            );
         }
 
         let claude_response = response
@@ -210,8 +229,8 @@ Important: Every article index from 0 to {} must appear in exactly one topic."#,
             response_text
         };
 
-        let clustering_result: ClusteringResult = serde_json::from_str(json_text)
-            .context("Failed to parse clustering JSON response")?;
+        let clustering_result: ClusteringResult =
+            serde_json::from_str(json_text).context("Failed to parse clustering JSON response")?;
 
         let mut topics = Vec::new();
         for cluster in clustering_result.topics {

@@ -67,7 +67,6 @@ impl ContentExtractor {
         Ok(None)
     }
 
-
     async fn try_fetch_article(&self, url: &str) -> Result<Option<ArticleContent>> {
         let response = self
             .client
@@ -81,7 +80,9 @@ impl ContentExtractor {
         // Provide specific error messages for common HTTP status codes
         match status.as_u16() {
             401 => anyhow::bail!("Access denied (401 Unauthorized) - requires login"),
-            403 => anyhow::bail!("Access forbidden (403 Forbidden) - may be paywalled or blocking bots"),
+            403 => anyhow::bail!(
+                "Access forbidden (403 Forbidden) - may be paywalled or blocking bots"
+            ),
             404 => anyhow::bail!("Page not found (404) - article may have been removed"),
             429 => anyhow::bail!("Rate limited (429) - too many requests"),
             500..=599 => anyhow::bail!("Server error ({}) - website is having issues", status),
@@ -89,7 +90,10 @@ impl ContentExtractor {
             _ => {}
         }
 
-        let html = response.text().await.context("Failed to read response body")?;
+        let html = response
+            .text()
+            .await
+            .context("Failed to read response body")?;
 
         // Extract publication date from HTML meta tags
         let published_date = self.extract_published_date(&html);
@@ -102,7 +106,10 @@ impl ContentExtractor {
         }
 
         if text.len() < 100 {
-            anyhow::bail!("Content too short ({} chars) - may be paywalled or blocked", text.len());
+            anyhow::bail!(
+                "Content too short ({} chars) - may be paywalled or blocked",
+                text.len()
+            );
         }
 
         Ok(Some(ArticleContent {

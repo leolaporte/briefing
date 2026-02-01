@@ -15,21 +15,26 @@ pub fn load_chrome_cookies() -> Result<CookieStore> {
 
     let mut loaded = false;
 
-    for cookie_path_opt in chrome_paths {
-        if let Some(cookie_path) = cookie_path_opt {
-            if cookie_path.exists() {
-                match load_chrome_cookies_from_db(&cookie_path, &mut cookie_store) {
-                    Ok(count) if count > 0 => {
-                        eprintln!("✓ Loaded {} cookies from {}", count, cookie_path.display());
-                        loaded = true;
-                        break;
-                    }
-                    Ok(_) => {
-                        eprintln!("  Note: Found {} but loaded 0 cookies", cookie_path.display());
-                    }
-                    Err(e) => {
-                        eprintln!("  Warning: Could not load cookies from {}: {}", cookie_path.display(), e);
-                    }
+    for cookie_path in chrome_paths.into_iter().flatten() {
+        if cookie_path.exists() {
+            match load_chrome_cookies_from_db(&cookie_path, &mut cookie_store) {
+                Ok(count) if count > 0 => {
+                    eprintln!("✓ Loaded {} cookies from {}", count, cookie_path.display());
+                    loaded = true;
+                    break;
+                }
+                Ok(_) => {
+                    eprintln!(
+                        "  Note: Found {} but loaded 0 cookies",
+                        cookie_path.display()
+                    );
+                }
+                Err(e) => {
+                    eprintln!(
+                        "  Warning: Could not load cookies from {}: {}",
+                        cookie_path.display(),
+                        e
+                    );
                 }
             }
         }
@@ -44,10 +49,17 @@ pub fn load_chrome_cookies() -> Result<CookieStore> {
                     loaded = true;
                 }
                 Ok(_) => {
-                    eprintln!("  Note: Found {} but loaded 0 cookies", firefox_path.display());
+                    eprintln!(
+                        "  Note: Found {} but loaded 0 cookies",
+                        firefox_path.display()
+                    );
                 }
                 Err(e) => {
-                    eprintln!("  Warning: Could not load cookies from {}: {}", firefox_path.display(), e);
+                    eprintln!(
+                        "  Warning: Could not load cookies from {}: {}",
+                        firefox_path.display(),
+                        e
+                    );
                 }
             }
         }
@@ -65,11 +77,9 @@ fn load_chrome_cookies_from_db(db_path: &PathBuf, cookie_store: &mut CookieStore
     let temp_path = std::env::temp_dir().join("collect-stories-cookies.db");
 
     // Copy the database to avoid locking issues
-    std::fs::copy(db_path, &temp_path)
-        .context("Failed to copy cookies database")?;
+    std::fs::copy(db_path, &temp_path).context("Failed to copy cookies database")?;
 
-    let conn = Connection::open(&temp_path)
-        .context("Failed to open cookies database")?;
+    let conn = Connection::open(&temp_path).context("Failed to open cookies database")?;
 
     let mut stmt = conn.prepare(
         "SELECT host_key, path, is_secure, expires_utc, name, value, is_httponly
@@ -84,13 +94,13 @@ fn load_chrome_cookies_from_db(db_path: &PathBuf, cookie_store: &mut CookieStore
     let mut count = 0;
     let rows = stmt.query_map([now], |row| {
         Ok((
-            row.get::<_, String>(0)?,  // host_key
-            row.get::<_, String>(1)?,  // path
-            row.get::<_, i64>(2)?,     // is_secure
-            row.get::<_, i64>(3)?,     // expires_utc
-            row.get::<_, String>(4)?,  // name
-            row.get::<_, String>(5)?,  // value
-            row.get::<_, i64>(6)?,     // is_httponly
+            row.get::<_, String>(0)?, // host_key
+            row.get::<_, String>(1)?, // path
+            row.get::<_, i64>(2)?,    // is_secure
+            row.get::<_, i64>(3)?,    // expires_utc
+            row.get::<_, String>(4)?, // name
+            row.get::<_, String>(5)?, // value
+            row.get::<_, i64>(6)?,    // is_httponly
         ))
     })?;
 
@@ -198,16 +208,17 @@ fn find_firefox_cookies() -> Option<PathBuf> {
     None
 }
 
-fn load_firefox_cookies_from_db(db_path: &PathBuf, cookie_store: &mut CookieStore) -> Result<usize> {
+fn load_firefox_cookies_from_db(
+    db_path: &PathBuf,
+    cookie_store: &mut CookieStore,
+) -> Result<usize> {
     // Firefox locks the database, so we need to copy it first
     let temp_path = std::env::temp_dir().join("collect-stories-firefox-cookies.db");
 
     // Copy the database to avoid locking issues
-    std::fs::copy(db_path, &temp_path)
-        .context("Failed to copy Firefox cookies database")?;
+    std::fs::copy(db_path, &temp_path).context("Failed to copy Firefox cookies database")?;
 
-    let conn = Connection::open(&temp_path)
-        .context("Failed to open Firefox cookies database")?;
+    let conn = Connection::open(&temp_path).context("Failed to open Firefox cookies database")?;
 
     // Current time in Unix timestamp (seconds)
     let now = chrono::Utc::now().timestamp();
@@ -221,13 +232,13 @@ fn load_firefox_cookies_from_db(db_path: &PathBuf, cookie_store: &mut CookieStor
     let mut count = 0;
     let rows = stmt.query_map([now], |row| {
         Ok((
-            row.get::<_, String>(0)?,  // host
-            row.get::<_, String>(1)?,  // path
-            row.get::<_, i64>(2)?,     // isSecure
-            row.get::<_, i64>(3)?,     // expiry
-            row.get::<_, String>(4)?,  // name
-            row.get::<_, String>(5)?,  // value
-            row.get::<_, i64>(6)?,     // isHttpOnly
+            row.get::<_, String>(0)?, // host
+            row.get::<_, String>(1)?, // path
+            row.get::<_, i64>(2)?,    // isSecure
+            row.get::<_, i64>(3)?,    // expiry
+            row.get::<_, String>(4)?, // name
+            row.get::<_, String>(5)?, // value
+            row.get::<_, i64>(6)?,    // isHttpOnly
         ))
     })?;
 

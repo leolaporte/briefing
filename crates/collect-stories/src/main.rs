@@ -206,7 +206,10 @@ async fn main() -> Result<()> {
         shared::briefing::BriefingGenerator::save_org_mode(&org_content, &show_info.slug, now)
             .context("Failed to save org-mode file")?;
 
-    println!("\n✅ Org-mode document saved to: {}", org_filepath.display());
+    println!(
+        "\n✅ Org-mode document saved to: {}",
+        org_filepath.display()
+    );
 
     Ok(())
 }

@@ -162,7 +162,10 @@ If there's a quote but no clear speaker attribution in the article, omit the QUO
             .context("Failed to send request to Claude API")?;
 
         if !response.status().is_success() {
-            let error_text = response.text().await.unwrap_or_else(|_| String::from("unknown error"));
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| String::from("unknown error"));
             anyhow::bail!("Claude API error: {}", error_text);
         }
 
@@ -184,7 +187,10 @@ If there's a quote but no clear speaker attribution in the article, omit the QUO
         let (quote, bullets) = self.parse_summary_with_quote(summary_text);
 
         if bullets.len() == 5 {
-            Ok(Summary::Success { points: bullets, quote })
+            Ok(Summary::Success {
+                points: bullets,
+                quote,
+            })
         } else {
             Ok(Summary::Failed(format!(
                 "Expected 5 bullets, got {}",
@@ -215,7 +221,8 @@ If there's a quote but no clear speaker attribution in the article, omit the QUO
 
             // Check for bullet points
             if let Some(stripped) = trimmed.strip_prefix(|c: char| c.is_numeric()) {
-                let stripped = stripped.trim_start_matches(|c: char| c == '.' || c == ')' || c.is_whitespace());
+                let stripped = stripped
+                    .trim_start_matches(|c: char| c == '.' || c == ')' || c.is_whitespace());
                 if !stripped.is_empty() {
                     bullets.push(stripped.to_string());
                 }
@@ -241,12 +248,14 @@ If there's a quote but no clear speaker attribution in the article, omit the QUO
                     return None;
                 }
                 if let Some(stripped) = trimmed.strip_prefix(|c: char| c.is_numeric()) {
-                    let stripped = stripped.trim_start_matches(|c: char| c == '.' || c == ')' || c.is_whitespace());
+                    let stripped = stripped
+                        .trim_start_matches(|c: char| c == '.' || c == ')' || c.is_whitespace());
                     if !stripped.is_empty() {
                         return Some(stripped.to_string());
                     }
                 }
-                if trimmed.starts_with('-') || trimmed.starts_with('*') || trimmed.starts_with('•') {
+                if trimmed.starts_with('-') || trimmed.starts_with('*') || trimmed.starts_with('•')
+                {
                     let stripped = trimmed[1..].trim();
                     if !stripped.is_empty() {
                         return Some(stripped.to_string());
@@ -272,7 +281,7 @@ If there's a quote but no clear speaker attribution in the article, omit the QUO
                     (url_clone, summary)
                 }
             })
-            .buffer_unordered(2)  // Reduced to 2 to avoid rate limits
+            .buffer_unordered(2) // Reduced to 2 to avoid rate limits
             .collect()
             .await
     }

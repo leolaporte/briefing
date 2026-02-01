@@ -4,7 +4,7 @@ use clap::Parser;
 use shared::{Story, Summary, Topic};
 use std::fs;
 use std::io::{self, Write as _};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
 #[command(name = "prepare-briefing")]
@@ -31,7 +31,8 @@ fn main() -> Result<()> {
     println!("🔍 Parsing org-mode content...");
     let (show_name, topics) = parse_org_mode(&org_content)?;
 
-    println!("✓ Parsed {} topics with {} total stories",
+    println!(
+        "✓ Parsed {} topics with {} total stories",
         topics.len(),
         topics.iter().map(|t| t.stories.len()).sum::<usize>()
     );
@@ -48,8 +49,9 @@ fn main() -> Result<()> {
 
     println!("\n📊 Generating links CSV...");
     let csv_content = shared::briefing::BriefingGenerator::generate_links_csv(&topics);
-    let csv_filepath = shared::briefing::BriefingGenerator::save_links_csv(&csv_content, &show_slug, now)
-        .context("Failed to save CSV file")?;
+    let csv_filepath =
+        shared::briefing::BriefingGenerator::save_links_csv(&csv_content, &show_slug, now)
+            .context("Failed to save CSV file")?;
 
     println!("✓ CSV saved to: {}", csv_filepath.display());
 
@@ -83,7 +85,7 @@ fn select_org_file() -> Result<PathBuf> {
         fs::metadata(path)
             .and_then(|m| m.modified())
             .ok()
-            .map(|t| std::cmp::Reverse(t))
+            .map(std::cmp::Reverse)
     });
 
     println!("Available org files:\n");
@@ -107,17 +109,22 @@ fn select_org_file() -> Result<PathBuf> {
     let mut input = String::new();
     io::stdin().read_line(&mut input)?;
 
-    let selection: usize = input.trim().parse()
+    let selection: usize = input
+        .trim()
+        .parse()
         .context("Invalid selection. Please enter a number.")?;
 
     if selection < 1 || selection > org_files.len() {
-        anyhow::bail!("Selection out of range. Please choose 1-{}", org_files.len());
+        anyhow::bail!(
+            "Selection out of range. Please choose 1-{}",
+            org_files.len()
+        );
     }
 
     Ok(org_files[selection - 1].clone())
 }
 
-fn extract_show_slug(org_file: &PathBuf) -> Result<String> {
+fn extract_show_slug(org_file: &Path) -> Result<String> {
     let filename = org_file
         .file_stem()
         .and_then(|s| s.to_str())
@@ -272,7 +279,9 @@ fn parse_org_mode(content: &str) -> Result<(String, Vec<Topic>)> {
     }
 
     if topics.is_empty() {
-        anyhow::bail!("No topics found in org file. Make sure the file follows the expected format.");
+        anyhow::bail!(
+            "No topics found in org file. Make sure the file follows the expected format."
+        );
     }
 
     Ok((show_name, topics))
