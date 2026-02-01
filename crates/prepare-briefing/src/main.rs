@@ -6,13 +6,10 @@ use std::fs::{self, OpenOptions};
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 
+#[allow(dead_code)]
 fn log_error(message: &str) {
     let log_path = "/tmp/prepare-briefing-errors.log";
-    if let Ok(mut file) = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(log_path)
-    {
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(log_path) {
         let timestamp = Utc::now().format("%Y-%m-%d %H:%M:%S");
         let _ = writeln!(file, "[{}] {}", timestamp, message);
     }
