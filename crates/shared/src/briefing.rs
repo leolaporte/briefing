@@ -153,9 +153,9 @@ impl BriefingGenerator {
             html.push_str("</details>\n");
         }
 
-        // Add footer section for co-hosts
+        // Add footer section
         html.push_str("<hr style=\"margin: 60px 0 30px 0; border-top: 2px solid #3498db;\">\n");
-        html.push_str("<h2 style=\"text-align: center; color: #2c3e50;\">Co-hosts please feel free to add stories below...</h2>\n");
+        html.push_str("<h2 style=\"text-align: center; color: #2c3e50;\">Stories will be updated as needed until show time.</h2>\n");
 
         html.push_str("</body>\n</html>");
         html
