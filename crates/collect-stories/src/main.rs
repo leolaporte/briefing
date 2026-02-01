@@ -113,23 +113,19 @@ async fn main() -> Result<()> {
         .filter_map(|(url, content)| content.map(|c| (url, c)))
         .collect();
 
-    let articles_with_content: Vec<_> = bookmarks
-        .iter()
-        .filter_map(|bookmark| {
-            content_map
-                .get(&bookmark.link)
-                .map(|content| (bookmark, content.clone()))
-        })
-        .collect();
+    let successful_extractions = content_map.len();
+    let failed_count = bookmarks.len() - successful_extractions;
 
-    let failed_count = bookmarks.len() - articles_with_content.len();
     println!(
         "✓ Successfully extracted content from {}/{} articles",
-        articles_with_content.len(),
+        successful_extractions,
         bookmarks.len()
     );
     if failed_count > 0 {
-        println!("\n⚠ Failed to extract {} articles:", failed_count);
+        println!(
+            "\n⚠ Failed to extract {} articles (will use Raindrop metadata):",
+            failed_count
+        );
         for bookmark in &bookmarks {
             if !content_map.contains_key(&bookmark.link) {
                 println!("  ✗ \"{}\"", bookmark.title);
@@ -138,56 +134,85 @@ async fn main() -> Result<()> {
         }
     }
 
-    if articles_with_content.is_empty() {
-        println!("No article content could be extracted.");
-        return Ok(());
+    // Only summarize articles that have content
+    let mut summary_map: HashMap<String, Summary> = HashMap::new();
+
+    if !content_map.is_empty() {
+        println!("\n🤖 Summarizing articles with Claude AI...");
+        println!("  (This may take a minute...)");
+        let summarizer = ClaudeSummarizer::new(config.anthropic_api_key.clone())?;
+
+        let articles_for_summary: Vec<(String, String)> = content_map
+            .iter()
+            .map(|(url, content)| (url.clone(), content.text.clone()))
+            .collect();
+
+        let summary_results = summarizer
+            .summarize_articles_parallel(articles_for_summary)
+            .await;
+
+        summary_map = summary_results.into_iter().collect();
+
+        let successful_summaries = summary_map
+            .values()
+            .filter(|s| matches!(s, Summary::Success { .. }))
+            .count();
+
+        println!(
+            "✓ Successfully summarized {}/{} articles",
+            successful_summaries,
+            summary_map.len()
+        );
     }
 
-    println!("\n🤖 Summarizing articles with Claude AI...");
-    println!("  (This may take a minute...)");
-    let summarizer = ClaudeSummarizer::new(config.anthropic_api_key.clone())?;
-
-    let articles_for_summary: Vec<(String, String)> = articles_with_content
+    // Create stories for ALL bookmarks
+    let stories: Vec<Story> = bookmarks
         .iter()
-        .map(|(bookmark, content)| (bookmark.link.clone(), content.text.clone()))
-        .collect();
-
-    let summary_results = summarizer
-        .summarize_articles_parallel(articles_for_summary)
-        .await;
-
-    // Create a map of URL -> Summary for correct pairing
-    let summary_map: HashMap<String, Summary> = summary_results.into_iter().collect();
-
-    let stories: Vec<Story> = articles_with_content
-        .iter()
-        .filter_map(|(bookmark, article_content)| {
-            summary_map.get(&bookmark.link).map(|summary| {
-                // Use extracted publication date if available, otherwise fall back to bookmark creation date
+        .map(|bookmark| {
+            // Determine the summary to use
+            let summary = if let Some(article_content) = content_map.get(&bookmark.link) {
+                // We have content - use the summary (or Failed if summarization failed)
                 let created = article_content
                     .published_date
                     .clone()
                     .unwrap_or_else(|| bookmark.created.clone());
 
-                Story {
+                let summary = summary_map
+                    .get(&bookmark.link)
+                    .cloned()
+                    .unwrap_or_else(|| Summary::Failed("Summarization failed".to_string()));
+
+                return Story {
                     title: bookmark.title.clone(),
                     url: bookmark.link.clone(),
                     created,
-                    summary: summary.clone(),
-                }
-            })
+                    summary,
+                };
+            } else {
+                // No content extracted
+                Summary::Failed("Summary not available".to_string())
+            };
+
+            Story {
+                title: bookmark.title.clone(),
+                url: bookmark.link.clone(),
+                created: bookmark.created.clone(),
+                summary,
+            }
         })
         .collect();
 
-    let successful_summaries = stories
-        .iter()
-        .filter(|s| matches!(s.summary, Summary::Success { .. }))
-        .count();
-
     println!(
-        "✓ Successfully summarized {}/{} articles",
-        successful_summaries,
-        stories.len()
+        "\n📊 Total stories: {} ({}  successfully summarized, {} failed)",
+        stories.len(),
+        stories
+            .iter()
+            .filter(|s| matches!(s.summary, Summary::Success { .. }))
+            .count(),
+        stories
+            .iter()
+            .filter(|s| matches!(s.summary, Summary::Failed(_)))
+            .count()
     );
 
     println!("\n🔗 Clustering stories by topic...");

@@ -9,6 +9,7 @@ pub struct Bookmark {
     pub id: i64,
     pub title: String,
     pub link: String,
+    pub excerpt: Option<String>,
     pub tags: Vec<String>,
     pub created: String,
 }

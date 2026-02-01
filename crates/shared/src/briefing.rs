@@ -142,7 +142,7 @@ impl BriefingGenerator {
                         html.push_str("    </details>\n");
                     }
                     Summary::Insufficient | Summary::Failed(_) => {
-                        html.push_str("    <p class=\"error\">No summary available</p>\n");
+                        html.push_str("    <p class=\"error\">Summary not available</p>\n");
                     }
                 }
 
@@ -271,11 +271,8 @@ impl BriefingGenerator {
                             org.push_str(&format!("- {}\n", point));
                         }
                     }
-                    Summary::Insufficient => {
-                        org.push_str("Summary unavailable\n");
-                    }
-                    Summary::Failed(_) => {
-                        org.push_str("Summary unavailable\n");
+                    Summary::Insufficient | Summary::Failed(_) => {
+                        org.push_str("Summary not available\n");
                     }
                 }
                 org.push('\n');
