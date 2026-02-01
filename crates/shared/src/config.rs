@@ -45,18 +45,15 @@ impl Config {
         // 2. ~/.config/podcast-briefing/.env (standard config location)
         if let Some(config_dir) = dirs::config_dir() {
             let config_path = config_dir.join("podcast-briefing").join(".env");
-            if config_path.exists()
-                && dotenvy::from_path(&config_path).is_ok() {
-                    return;
-                }
+            if config_path.exists() && dotenvy::from_path(&config_path).is_ok() {
+                return;
+            }
         }
 
         // 3. ~/.env (home directory)
         if let Some(home_dir) = dirs::home_dir() {
             let home_path = home_dir.join(".env");
-            if home_path.exists()
-                && dotenvy::from_path(&home_path).is_ok() {
-                }
+            if home_path.exists() && dotenvy::from_path(&home_path).is_ok() {}
         }
 
         // If none found, that's okay - environment variables might be set system-wide

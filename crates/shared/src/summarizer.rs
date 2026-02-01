@@ -240,6 +240,7 @@ If there's a quote but no clear speaker attribution in the article, omit the QUO
         (quote, bullets)
     }
 
+    #[allow(dead_code)]
     fn parse_bullet_points(&self, text: &str) -> Vec<String> {
         text.lines()
             .filter_map(|line| {

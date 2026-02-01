@@ -17,6 +17,7 @@ pub struct Bookmark {
 struct RaindropResponse {
     items: Vec<Bookmark>,
     #[serde(default)]
+    #[allow(dead_code)]
     count: usize,
 }
 

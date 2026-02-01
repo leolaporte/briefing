@@ -104,34 +104,32 @@ fn load_chrome_cookies_from_db(db_path: &PathBuf, cookie_store: &mut CookieStore
         ))
     })?;
 
-    for row_result in rows {
-        if let Ok((host, path, is_secure, _expires, name, value, _is_httponly)) = row_result {
-            // Build a Set-Cookie header string
-            let cookie_str = format!(
-                "{}={}; Domain={}; Path={}{}",
-                name,
-                value,
-                host,
-                path,
-                if is_secure != 0 { "; Secure" } else { "" }
-            );
+    for (host, path, is_secure, _expires, name, value, _is_httponly) in rows.flatten() {
+        // Build a Set-Cookie header string
+        let cookie_str = format!(
+            "{}={}; Domain={}; Path={}{}",
+            name,
+            value,
+            host,
+            path,
+            if is_secure != 0 { "; Secure" } else { "" }
+        );
 
-            // Parse and insert into cookie store
-            // We need a URL to associate the cookie with
-            let url_str = format!(
-                "{}://{}{}",
-                if is_secure != 0 { "https" } else { "http" },
-                host.trim_start_matches('.'),
-                path
-            );
+        // Parse and insert into cookie store
+        // We need a URL to associate the cookie with
+        let url_str = format!(
+            "{}://{}{}",
+            if is_secure != 0 { "https" } else { "http" },
+            host.trim_start_matches('.'),
+            path
+        );
 
-            if let Ok(url) = Url::parse(&url_str) {
-                // Use the cookie crate's parse method (re-exported by cookie_store)
-                if let Ok(cookie) = cookie_store::RawCookie::parse(&cookie_str) {
-                    let cookie = cookie.into_owned();
-                    cookie_store.insert_raw(&cookie, &url).ok();
-                    count += 1;
-                }
+        if let Ok(url) = Url::parse(&url_str) {
+            // Use the cookie crate's parse method (re-exported by cookie_store)
+            if let Ok(cookie) = cookie_store::RawCookie::parse(&cookie_str) {
+                let cookie = cookie.into_owned();
+                cookie_store.insert_raw(&cookie, &url).ok();
+                count += 1;
             }
         }
     }
@@ -242,32 +240,30 @@ fn load_firefox_cookies_from_db(
         ))
     })?;
 
-    for row_result in rows {
-        if let Ok((host, path, is_secure, _expires, name, value, _is_httponly)) = row_result {
-            // Build a Set-Cookie header string
-            let cookie_str = format!(
-                "{}={}; Domain={}; Path={}{}",
-                name,
-                value,
-                host,
-                path,
-                if is_secure != 0 { "; Secure" } else { "" }
-            );
+    for (host, path, is_secure, _expires, name, value, _is_httponly) in rows.flatten() {
+        // Build a Set-Cookie header string
+        let cookie_str = format!(
+            "{}={}; Domain={}; Path={}{}",
+            name,
+            value,
+            host,
+            path,
+            if is_secure != 0 { "; Secure" } else { "" }
+        );
 
-            // Parse and insert into cookie store
-            let url_str = format!(
-                "{}://{}{}",
-                if is_secure != 0 { "https" } else { "http" },
-                host.trim_start_matches('.'),
-                path
-            );
+        // Parse and insert into cookie store
+        let url_str = format!(
+            "{}://{}{}",
+            if is_secure != 0 { "https" } else { "http" },
+            host.trim_start_matches('.'),
+            path
+        );
 
-            if let Ok(url) = Url::parse(&url_str) {
-                if let Ok(cookie) = cookie_store::RawCookie::parse(&cookie_str) {
-                    let cookie = cookie.into_owned();
-                    cookie_store.insert_raw(&cookie, &url).ok();
-                    count += 1;
-                }
+        if let Ok(url) = Url::parse(&url_str) {
+            if let Ok(cookie) = cookie_store::RawCookie::parse(&cookie_str) {
+                let cookie = cookie.into_owned();
+                cookie_store.insert_raw(&cookie, &url).ok();
+                count += 1;
             }
         }
     }
