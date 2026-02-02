@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use chrono::Utc;
+use chrono::{Datelike, Local, TimeZone, Timelike, Utc};
 use clap::Parser;
 use shared::{Story, Summary, Topic};
 use std::fs::{self, OpenOptions};
@@ -46,7 +46,18 @@ fn main() -> Result<()> {
         topics.iter().map(|t| t.stories.len()).sum::<usize>()
     );
 
-    let now = Utc::now();
+    // Use local time for file naming (same as collect-stories)
+    let local_now = Local::now();
+    let now = Utc
+        .with_ymd_and_hms(
+            local_now.year(),
+            local_now.month(),
+            local_now.day(),
+            local_now.hour(),
+            local_now.minute(),
+            local_now.second(),
+        )
+        .unwrap();
     let show_slug = extract_show_slug(&org_file)?;
 
     println!("\n📝 Generating HTML briefing...");
