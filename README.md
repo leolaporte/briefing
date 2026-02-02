@@ -1,6 +1,6 @@
 # Podcast Briefing Tools
 
-A pair of Rust CLI tools for creating podcast briefing documents. Fetches bookmarked articles from Raindrop.io, summarizes them using Claude AI, groups related stories by topic, and generates briefing documents in multiple formats for TWiT, MacBreak Weekly, or Intelligent Machines podcasts.
+A pair of Rust CLI tools for creating podcast briefing documents. Fetches bookmarked articles from Raindrop.io, summarizes them using Claude AI, groups related stories by topic, and generates briefing documents in multiple formats for This Week in Tech (twit), MacBreak Weekly (mbw), and Intelligent Machines (im) podcasts.
 
 ## Tools Overview
 
@@ -79,9 +79,9 @@ The tools search for `.env` in this order:
 ### Step 1: Collect Stories During the Week
 
 Tag bookmarks in Raindrop.io with show-specific tags:
-- TWiT: `#twit`
-- MacBreak Weekly: `#mbw`
-- Intelligent Machines: `#im`
+- twit (This Week in Tech): `#twit`
+- mbw (MacBreak Weekly): `#mbw`
+- im (Intelligent Machines): `#im`
 
 ### Step 2: Generate Initial Briefing
 
@@ -165,13 +165,13 @@ collect-stories [OPTIONS]
 # Interactive mode - prompts for show selection
 collect-stories
 
-# Collect last week's TWiT stories
+# Collect last week's twit (This Week in Tech) stories
 collect-stories --show twit
 
-# Collect last 2 weeks of MacBreak Weekly stories
+# Collect last 2 weeks of mbw (MacBreak Weekly) stories
 collect-stories --show mbw --days 14
 
-# Collect last 3 days of Intelligent Machines stories
+# Collect last 3 days of im (Intelligent Machines) stories
 collect-stories --show im --days 3
 ```
 

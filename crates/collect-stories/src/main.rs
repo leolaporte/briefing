@@ -45,9 +45,9 @@ fn log_error(message: &str) {
 
 fn prompt_show_selection() -> Result<Show> {
     println!("Which show?");
-    println!("  1) TWiT");
-    println!("  2) MacBreak Weekly");
-    println!("  3) Intelligent Machines");
+    println!("  1) twit (This Week in Tech)");
+    println!("  2) mbw (MacBreak Weekly)");
+    println!("  3) im (Intelligent Machines)");
     print!("\nEnter your choice (1-3): ");
     stdio::stdout().flush()?;
 
