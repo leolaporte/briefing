@@ -319,6 +319,7 @@ impl BriefingGenerator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Story;
     use chrono::TimeZone;
 
     #[test]
@@ -375,5 +376,215 @@ mod tests {
         let date = Utc.with_ymd_and_hms(2026, 2, 1, 21, 25, 0).unwrap();
         let result = BriefingGenerator::calculate_next_show_date("Intelligent Machines", date);
         assert_eq!(result, "Wed, 4 February 2026");
+    }
+
+    // ==================== HTML Escaping Tests ====================
+
+    #[test]
+    fn test_escape_html_ampersand() {
+        assert_eq!(BriefingGenerator::escape_html("A & B"), "A &amp; B");
+    }
+
+    #[test]
+    fn test_escape_html_less_than() {
+        assert_eq!(BriefingGenerator::escape_html("<script>"), "&lt;script&gt;");
+    }
+
+    #[test]
+    fn test_escape_html_quotes() {
+        assert_eq!(
+            BriefingGenerator::escape_html("He said \"hello\""),
+            "He said &quot;hello&quot;"
+        );
+    }
+
+    #[test]
+    fn test_escape_html_single_quotes() {
+        assert_eq!(
+            BriefingGenerator::escape_html("It's here"),
+            "It&#39;s here"
+        );
+    }
+
+    #[test]
+    fn test_escape_html_combined() {
+        assert_eq!(
+            BriefingGenerator::escape_html("<a href=\"test\">Click & Go</a>"),
+            "&lt;a href=&quot;test&quot;&gt;Click &amp; Go&lt;/a&gt;"
+        );
+    }
+
+    // ==================== CSV Escaping Tests ====================
+
+    #[test]
+    fn test_escape_csv_no_special_chars() {
+        assert_eq!(BriefingGenerator::escape_csv("Hello World"), "Hello World");
+    }
+
+    #[test]
+    fn test_escape_csv_with_comma() {
+        assert_eq!(
+            BriefingGenerator::escape_csv("Hello, World"),
+            "\"Hello, World\""
+        );
+    }
+
+    #[test]
+    fn test_escape_csv_with_quotes() {
+        assert_eq!(
+            BriefingGenerator::escape_csv("He said \"hi\""),
+            "\"He said \"\"hi\"\"\""
+        );
+    }
+
+    #[test]
+    fn test_escape_csv_with_newline() {
+        assert_eq!(
+            BriefingGenerator::escape_csv("Line1\nLine2"),
+            "\"Line1\nLine2\""
+        );
+    }
+
+    // ==================== Date Formatting Tests ====================
+
+    #[test]
+    fn test_format_date_valid_iso() {
+        let result = BriefingGenerator::format_date("2026-02-01T15:30:00Z");
+        assert!(result.contains("02/01/2026"));
+    }
+
+    #[test]
+    fn test_format_date_invalid_fallback() {
+        let result = BriefingGenerator::format_date("not a date");
+        assert_eq!(result, "not a date");
+    }
+
+    // ==================== HTML Generation Tests ====================
+
+    #[test]
+    fn test_generate_html_contains_show_name() {
+        use crate::summarizer::Summary;
+
+        let topics = vec![Topic {
+            title: "Tech News".to_string(),
+            stories: vec![Story {
+                title: "Test Article".to_string(),
+                url: "https://example.com".to_string(),
+                created: "2026-02-01T00:00:00Z".to_string(),
+                summary: Summary::Success {
+                    points: vec!["Point 1".to_string()],
+                    quote: None,
+                },
+            }],
+        }];
+
+        let date = Utc.with_ymd_and_hms(2026, 2, 1, 12, 0, 0).unwrap();
+        let html = BriefingGenerator::generate(&topics, "TWiT", date);
+
+        assert!(html.contains("TWiT Briefing"));
+        assert!(html.contains("Tech News"));
+        assert!(html.contains("Test Article"));
+        assert!(html.contains("https://example.com"));
+        assert!(html.contains("Point 1"));
+    }
+
+    #[test]
+    fn test_generate_html_escapes_special_chars() {
+        use crate::summarizer::Summary;
+
+        let topics = vec![Topic {
+            title: "Apple & Google".to_string(),
+            stories: vec![Story {
+                title: "Test <script>".to_string(),
+                url: "https://example.com".to_string(),
+                created: "2026-02-01".to_string(),
+                summary: Summary::Success {
+                    points: vec!["Point \"quoted\"".to_string()],
+                    quote: None,
+                },
+            }],
+        }];
+
+        let date = Utc.with_ymd_and_hms(2026, 2, 1, 12, 0, 0).unwrap();
+        let html = BriefingGenerator::generate(&topics, "Test", date);
+
+        assert!(html.contains("Apple &amp; Google"));
+        assert!(html.contains("Test &lt;script&gt;"));
+        assert!(html.contains("Point &quot;quoted&quot;"));
+    }
+
+    // ==================== CSV Generation Tests ====================
+
+    #[test]
+    fn test_generate_links_csv() {
+        use crate::summarizer::Summary;
+
+        let topics = vec![Topic {
+            title: "Apple".to_string(),
+            stories: vec![
+                Story {
+                    title: "Article 1".to_string(),
+                    url: "https://a.com".to_string(),
+                    created: "2026-02-01".to_string(),
+                    summary: Summary::Insufficient,
+                },
+                Story {
+                    title: "Article 2".to_string(),
+                    url: "https://b.com".to_string(),
+                    created: "2026-02-01".to_string(),
+                    summary: Summary::Insufficient,
+                },
+            ],
+        }];
+
+        let csv = BriefingGenerator::generate_links_csv(&topics);
+
+        // First row should have topic title
+        assert!(csv.contains(",Apple,Article 1,,https://a.com"));
+        // Second row should have blank topic
+        assert!(csv.contains(",,Article 2,,https://b.com"));
+    }
+
+    // ==================== Org Mode Generation Tests ====================
+
+    #[test]
+    fn test_generate_org_mode() {
+        use crate::summarizer::Summary;
+
+        let topics = vec![Topic {
+            title: "Tech".to_string(),
+            stories: vec![Story {
+                title: "Story Title".to_string(),
+                url: "https://example.com".to_string(),
+                created: "2026-02-01".to_string(),
+                summary: Summary::Success {
+                    points: vec!["Point A".to_string(), "Point B".to_string()],
+                    quote: Some("\"A quote\" - Author".to_string()),
+                },
+            }],
+        }];
+
+        let date = Utc.with_ymd_and_hms(2026, 2, 1, 12, 0, 0).unwrap();
+        let org = BriefingGenerator::generate_org_mode(&topics, "TWiT", date);
+
+        assert!(org.contains("#+TITLE: TWiT Briefing Book"));
+        assert!(org.contains("* Tech"));
+        assert!(org.contains("** Story Title"));
+        assert!(org.contains("*** URL\nhttps://example.com"));
+        assert!(org.contains("*** Summary"));
+        assert!(org.contains("- Point A"));
+        assert!(org.contains("- Point B"));
+        assert!(org.contains("\"A quote\" - Author"));
+    }
+
+    #[test]
+    fn test_generate_org_mode_includes_standard_sections() {
+        let topics = vec![];
+        let date = Utc.with_ymd_and_hms(2026, 2, 1, 12, 0, 0).unwrap();
+        let org = BriefingGenerator::generate_org_mode(&topics, "Test", date);
+
+        assert!(org.contains("* In Other News"));
+        assert!(org.contains("* Leo's Picks"));
+        assert!(org.contains("* In Memoriam"));
     }
 }

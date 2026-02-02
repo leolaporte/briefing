@@ -312,3 +312,220 @@ fn parse_org_mode(content: &str) -> Result<(String, Vec<Topic>)> {
 
     Ok((show_name, topics))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ==================== extract_show_slug Tests ====================
+
+    #[test]
+    fn test_extract_show_slug_twit() {
+        let path = PathBuf::from("/home/user/Documents/twit-2026-02-01.org");
+        let result = extract_show_slug(&path).unwrap();
+        assert_eq!(result, "twit");
+    }
+
+    #[test]
+    fn test_extract_show_slug_mbw() {
+        let path = PathBuf::from("/home/user/Documents/mbw-2026-02-03.org");
+        let result = extract_show_slug(&path).unwrap();
+        assert_eq!(result, "mbw");
+    }
+
+    #[test]
+    fn test_extract_show_slug_with_hyphens() {
+        let path = PathBuf::from("/home/user/Documents/intelligent-machines-2026-02-04.org");
+        let result = extract_show_slug(&path).unwrap();
+        assert_eq!(result, "intelligent-machines");
+    }
+
+    #[test]
+    fn test_extract_show_slug_short_name() {
+        let path = PathBuf::from("im-2026-02-04.org");
+        let result = extract_show_slug(&path).unwrap();
+        assert_eq!(result, "im");
+    }
+
+    // ==================== parse_org_mode Tests ====================
+
+    #[test]
+    fn test_parse_org_mode_basic() {
+        let content = r#"#+TITLE: TWiT Briefing Book
+#+DATE: Sun, 2 February 2026
+
+* Apple
+
+** iPhone 17 Announced
+
+*** URL
+https://example.com/iphone17
+
+*** Date
+2026-02-01
+
+*** Summary
+- New chip announced
+- Better battery life
+"#;
+
+        let (show_name, topics) = parse_org_mode(content).unwrap();
+
+        assert_eq!(show_name, "TWiT");
+        assert_eq!(topics.len(), 1);
+        assert_eq!(topics[0].title, "Apple");
+        assert_eq!(topics[0].stories.len(), 1);
+        assert_eq!(topics[0].stories[0].title, "iPhone 17 Announced");
+        assert_eq!(topics[0].stories[0].url, "https://example.com/iphone17");
+
+        if let Summary::Success { points, .. } = &topics[0].stories[0].summary {
+            assert_eq!(points.len(), 2);
+            assert_eq!(points[0], "New chip announced");
+        } else {
+            panic!("Expected Summary::Success");
+        }
+    }
+
+    #[test]
+    fn test_parse_org_mode_with_quote() {
+        let content = r#"#+TITLE: Test Briefing
+
+* News
+
+** Story Title
+
+*** URL
+https://test.com
+
+*** Summary
+"This is a quote" - Author Name
+- Point one
+- Point two
+"#;
+
+        let (_, topics) = parse_org_mode(content).unwrap();
+
+        if let Summary::Success { points, quote } = &topics[0].stories[0].summary {
+            assert_eq!(points.len(), 2);
+            assert!(quote.is_some());
+            assert!(quote.as_ref().unwrap().contains("This is a quote"));
+        } else {
+            panic!("Expected Summary::Success");
+        }
+    }
+
+    #[test]
+    fn test_parse_org_mode_multiple_topics() {
+        let content = r#"#+TITLE: TWiT Briefing
+
+* Apple
+
+** Apple Story
+
+*** URL
+https://apple.com
+
+*** Summary
+- Point
+
+* Google
+
+** Google Story
+
+*** URL
+https://google.com
+
+*** Summary
+- Another point
+"#;
+
+        let (_, topics) = parse_org_mode(content).unwrap();
+
+        assert_eq!(topics.len(), 2);
+        assert_eq!(topics[0].title, "Apple");
+        assert_eq!(topics[1].title, "Google");
+    }
+
+    #[test]
+    fn test_parse_org_mode_skips_empty_topics() {
+        let content = r#"#+TITLE: Test
+
+* Has Stories
+
+** A Story
+
+*** URL
+https://example.com
+
+*** Summary
+- Point
+
+* Empty Topic
+
+* In Other News
+
+* Leo's Picks
+"#;
+
+        let (_, topics) = parse_org_mode(content).unwrap();
+
+        // Only "Has Stories" should be included
+        assert_eq!(topics.len(), 1);
+        assert_eq!(topics[0].title, "Has Stories");
+    }
+
+    #[test]
+    fn test_parse_org_mode_extracts_show_name() {
+        let content = r#"#+TITLE: MacBreak Weekly Briefing Book
+
+* Topic
+
+** Story
+
+*** URL
+https://test.com
+
+*** Summary
+- Point
+"#;
+
+        let (show_name, _) = parse_org_mode(content).unwrap();
+        assert_eq!(show_name, "MacBreak Weekly");
+    }
+
+    #[test]
+    fn test_parse_org_mode_no_topics_error() {
+        let content = r#"#+TITLE: Empty Briefing
+
+* In Other News
+
+* Leo's Picks
+"#;
+
+        let result = parse_org_mode(content);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("No topics found"));
+    }
+
+    #[test]
+    fn test_parse_org_mode_with_date() {
+        let content = r#"#+TITLE: Test Briefing
+
+* Topic
+
+** Story
+
+*** URL
+https://test.com
+
+*** Date
+Sat, 1 Feb 2026
+
+*** Summary
+- Point
+"#;
+
+        let (_, topics) = parse_org_mode(content).unwrap();
+        assert_eq!(topics[0].stories[0].created, "Sat, 1 Feb 2026");
+    }
+}

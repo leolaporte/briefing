@@ -204,3 +204,133 @@ impl ContentExtractor {
             .await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Helper to create extractor for testing format_date
+    fn test_format_date(date_str: &str) -> Option<String> {
+        // Create a minimal extractor just for testing the format_date function
+        let extractor = ContentExtractor {
+            client: reqwest::Client::new(),
+            semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
+        };
+        extractor.format_date(date_str)
+    }
+
+    #[test]
+    fn test_format_date_iso8601_with_time() {
+        let result = test_format_date("2026-02-01T15:30:00Z");
+        assert!(result.is_some());
+        let formatted = result.unwrap();
+        assert!(formatted.contains("1 Feb 2026") || formatted.contains("Feb"));
+    }
+
+    #[test]
+    fn test_format_date_iso8601_with_timezone() {
+        let result = test_format_date("2026-02-01T15:30:00+00:00");
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_format_date_date_only() {
+        let result = test_format_date("2026-02-01");
+        assert!(result.is_some());
+        let formatted = result.unwrap();
+        assert!(formatted.contains("2026"));
+    }
+
+    #[test]
+    fn test_format_date_invalid() {
+        let result = test_format_date("not a date");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_format_date_empty() {
+        let result = test_format_date("");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_extract_published_date_og_tag() {
+        let extractor = ContentExtractor {
+            client: reqwest::Client::new(),
+            semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
+        };
+
+        let html = r#"
+            <html>
+            <head>
+                <meta property="article:published_time" content="2026-02-01T12:00:00Z">
+            </head>
+            </html>
+        "#;
+
+        let result = extractor.extract_published_date(html);
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_extract_published_date_time_tag() {
+        let extractor = ContentExtractor {
+            client: reqwest::Client::new(),
+            semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
+        };
+
+        let html = r#"
+            <html>
+            <body>
+                <time datetime="2026-02-01T12:00:00Z">February 1, 2026</time>
+            </body>
+            </html>
+        "#;
+
+        let result = extractor.extract_published_date(html);
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_extract_published_date_no_date() {
+        let extractor = ContentExtractor {
+            client: reqwest::Client::new(),
+            semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
+        };
+
+        let html = r#"
+            <html>
+            <head><title>No date here</title></head>
+            </html>
+        "#;
+
+        let result = extractor.extract_published_date(html);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_article_content_struct() {
+        let content = ArticleContent {
+            text: "Article text".to_string(),
+            published_date: Some("Sat, 1 Feb 2026".to_string()),
+        };
+
+        assert_eq!(content.text, "Article text");
+        assert_eq!(content.published_date, Some("Sat, 1 Feb 2026".to_string()));
+    }
+
+    #[test]
+    fn test_extraction_result_variants() {
+        let success = ExtractionResult::Success(ArticleContent {
+            text: "text".to_string(),
+            published_date: None,
+        });
+        assert!(matches!(success, ExtractionResult::Success(_)));
+
+        let paywalled = ExtractionResult::Paywalled;
+        assert!(matches!(paywalled, ExtractionResult::Paywalled));
+
+        let failed = ExtractionResult::Failed("error".to_string());
+        assert!(matches!(failed, ExtractionResult::Failed(_)));
+    }
+}

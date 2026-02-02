@@ -100,3 +100,112 @@ pub fn list_story_files() -> Result<Vec<(PathBuf, BriefingData)>> {
 
     Ok(files)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::clustering::{Story, Topic};
+    use crate::models::ShowInfo;
+    use crate::summarizer::Summary;
+    use tempfile::tempdir;
+
+    fn make_test_data() -> BriefingData {
+        let show = ShowInfo::new("Test Show", "test", "TEST");
+        let story = Story {
+            title: "Test Article".to_string(),
+            url: "https://example.com".to_string(),
+            created: "2026-02-01".to_string(),
+            summary: Summary::Success {
+                points: vec!["Point 1".to_string()],
+                quote: None,
+            },
+        };
+        let topics = vec![Topic {
+            title: "News".to_string(),
+            stories: vec![story],
+        }];
+        BriefingData {
+            version: "1.0".to_string(),
+            created_at: "2026-02-01T00:00:00Z".to_string(),
+            show,
+            topics,
+        }
+    }
+
+    #[test]
+    fn test_save_and_load_stories() {
+        let temp_dir = tempdir().unwrap();
+        let filepath = temp_dir.path().join("test-stories.json");
+
+        let data = make_test_data();
+        let json = serde_json::to_string_pretty(&data).unwrap();
+        fs::write(&filepath, json).unwrap();
+
+        let loaded = load_stories(&filepath).unwrap();
+
+        assert_eq!(loaded.version, "1.0");
+        assert_eq!(loaded.show.name, "Test Show");
+        assert_eq!(loaded.topics.len(), 1);
+        assert_eq!(loaded.topics[0].stories.len(), 1);
+        assert_eq!(loaded.topics[0].stories[0].title, "Test Article");
+    }
+
+    #[test]
+    fn test_load_stories_file_not_found() {
+        let result = load_stories(&PathBuf::from("/nonexistent/path/stories.json"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_load_stories_invalid_json() {
+        let temp_dir = tempdir().unwrap();
+        let filepath = temp_dir.path().join("invalid.json");
+        fs::write(&filepath, "not valid json").unwrap();
+
+        let result = load_stories(&filepath);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_load_stories_wrong_version() {
+        let temp_dir = tempdir().unwrap();
+        let filepath = temp_dir.path().join("wrong-version.json");
+
+        let mut data = make_test_data();
+        data.version = "2.0".to_string();
+        let json = serde_json::to_string_pretty(&data).unwrap();
+        fs::write(&filepath, json).unwrap();
+
+        let result = load_stories(&filepath);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Unsupported"));
+    }
+
+    #[test]
+    fn test_load_stories_empty_topics() {
+        let temp_dir = tempdir().unwrap();
+        let filepath = temp_dir.path().join("empty-topics.json");
+
+        let show = ShowInfo::new("Test", "test", "TEST");
+        let data = BriefingData {
+            version: "1.0".to_string(),
+            created_at: "2026-02-01T00:00:00Z".to_string(),
+            show,
+            topics: vec![],
+        };
+        let json = serde_json::to_string_pretty(&data).unwrap();
+        fs::write(&filepath, json).unwrap();
+
+        let result = load_stories(&filepath);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("no topics"));
+    }
+
+    #[test]
+    fn test_get_default_stories_dir() {
+        let dir = get_default_stories_dir().unwrap();
+        assert!(dir.to_string_lossy().contains("podcast-briefing"));
+        assert!(dir.to_string_lossy().contains("stories"));
+    }
+}
