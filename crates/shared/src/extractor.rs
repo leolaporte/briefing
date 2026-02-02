@@ -22,9 +22,9 @@ impl ContentExtractor {
         // Create reqwest cookie jar
         let cookie_jar = Arc::new(reqwest::cookie::Jar::default());
 
-        // Load browser cookies for accessing paywalled sites
-        if let Ok(chrome_cookies) = crate::cookies::load_chrome_cookies() {
-            for cookie in chrome_cookies.iter_any() {
+        // Load Firefox cookies for accessing paywalled sites
+        if let Ok(browser_cookies) = crate::cookies::load_browser_cookies() {
+            for cookie in browser_cookies.iter_any() {
                 if let Some(domain) = cookie.domain() {
                     let url_str = format!("https://{}", domain);
                     if let Ok(url) = url::Url::parse(&url_str) {

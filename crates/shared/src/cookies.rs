@@ -4,179 +4,26 @@ use rusqlite::Connection;
 use std::path::PathBuf;
 use url::Url;
 
-pub fn load_chrome_cookies() -> Result<CookieStore> {
+pub fn load_browser_cookies() -> Result<CookieStore> {
     let mut cookie_store = CookieStore::default();
 
-    // Try Chrome/Chromium first
-    let chrome_paths = vec![
-        dirs::home_dir().map(|h| h.join(".config/google-chrome/Default/Cookies")),
-        dirs::home_dir().map(|h| h.join(".config/chromium/Default/Cookies")),
-    ];
-
-    let mut loaded = false;
-
-    for cookie_path in chrome_paths.into_iter().flatten() {
-        if cookie_path.exists() {
-            match load_chrome_cookies_from_db(&cookie_path, &mut cookie_store) {
-                Ok(count) if count > 0 => {
-                    eprintln!("✓ Loaded {} cookies from {}", count, cookie_path.display());
-                    loaded = true;
-                    break;
-                }
-                Ok(_) => {
-                    eprintln!(
-                        "  Note: Found {} but loaded 0 cookies",
-                        cookie_path.display()
-                    );
-                }
-                Err(e) => {
-                    eprintln!(
-                        "  Warning: Could not load cookies from {}: {}",
-                        cookie_path.display(),
-                        e
-                    );
-                }
+    if let Some(firefox_path) = find_firefox_cookies() {
+        match load_firefox_cookies_from_db(&firefox_path, &mut cookie_store) {
+            Ok(count) if count > 0 => {
+                eprintln!("✓ Loaded {} cookies from Firefox", count);
+            }
+            Ok(_) => {
+                eprintln!("  Note: Found Firefox cookies but loaded 0");
+            }
+            Err(e) => {
+                eprintln!("  Warning: Could not load Firefox cookies: {}", e);
             }
         }
-    }
-
-    // If Chrome didn't work, try Firefox
-    if !loaded {
-        if let Some(firefox_path) = find_firefox_cookies() {
-            match load_firefox_cookies_from_db(&firefox_path, &mut cookie_store) {
-                Ok(count) if count > 0 => {
-                    eprintln!("✓ Loaded {} cookies from {}", count, firefox_path.display());
-                    loaded = true;
-                }
-                Ok(_) => {
-                    eprintln!(
-                        "  Note: Found {} but loaded 0 cookies",
-                        firefox_path.display()
-                    );
-                }
-                Err(e) => {
-                    eprintln!(
-                        "  Warning: Could not load cookies from {}: {}",
-                        firefox_path.display(),
-                        e
-                    );
-                }
-            }
-        }
-    }
-
-    if !loaded {
-        eprintln!("  Note: No browser cookies loaded (paywalled sites may not work)");
+    } else {
+        eprintln!("  Note: No Firefox cookies found (paywalled sites may not work)");
     }
 
     Ok(cookie_store)
-}
-
-fn load_chrome_cookies_from_db(db_path: &PathBuf, cookie_store: &mut CookieStore) -> Result<usize> {
-    // Chrome's cookies DB is often locked, so we need to copy it first
-    let temp_path = std::env::temp_dir().join("collect-stories-cookies.db");
-
-    // Copy the database to avoid locking issues
-    std::fs::copy(db_path, &temp_path).context("Failed to copy cookies database")?;
-
-    let conn = Connection::open(&temp_path).context("Failed to open cookies database")?;
-
-    // Check if Chrome is using encrypted cookies (common on Linux)
-    let encrypted_count: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM cookies WHERE encrypted_value != x''",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(0);
-
-    let unencrypted_count: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM cookies WHERE value != ''",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(0);
-
-    if encrypted_count > 0 && unencrypted_count == 0 {
-        std::fs::remove_file(&temp_path).ok();
-        anyhow::bail!(
-            "Chrome cookies are encrypted (found {} encrypted cookies). \
-            Please use Firefox or manually export cookies.",
-            encrypted_count
-        );
-    }
-
-    let mut stmt = conn.prepare(
-        "SELECT host_key, path, is_secure, expires_utc, name, value, is_httponly
-         FROM cookies
-         WHERE expires_utc > ? AND name != '' AND value != ''",
-    )?;
-
-    // Current time in Chrome's timestamp format (microseconds since 1601-01-01)
-    // Chrome uses Windows FILETIME epoch, which is 11,644,473,600 seconds before Unix epoch
-    let now = (chrono::Utc::now().timestamp() + 11_644_473_600) * 1_000_000;
-
-    let mut count = 0;
-    let rows = stmt.query_map([now], |row| {
-        Ok((
-            row.get::<_, String>(0)?, // host_key
-            row.get::<_, String>(1)?, // path
-            row.get::<_, i64>(2)?,    // is_secure
-            row.get::<_, i64>(3)?,    // expires_utc
-            row.get::<_, String>(4)?, // name
-            row.get::<_, String>(5)?, // value
-            row.get::<_, i64>(6)?,    // is_httponly
-        ))
-    })?;
-
-    for (host, path, is_secure, _expires, name, value, _is_httponly) in rows.flatten() {
-        // Build a Set-Cookie header string
-        let cookie_str = format!(
-            "{}={}; Domain={}; Path={}{}",
-            name,
-            value,
-            host,
-            path,
-            if is_secure != 0 { "; Secure" } else { "" }
-        );
-
-        // Parse and insert into cookie store
-        // We need a URL to associate the cookie with
-        // Use a domain without leading dot, and add a valid path
-        let clean_host = host.trim_start_matches('.');
-        let clean_path = if path.is_empty() { "/" } else { &path };
-        let url_str = format!(
-            "{}://{}{}",
-            if is_secure != 0 { "https" } else { "http" },
-            clean_host,
-            clean_path
-        );
-
-        match Url::parse(&url_str) {
-            Ok(url) => {
-                match cookie_store::RawCookie::parse(&cookie_str) {
-                    Ok(cookie) => {
-                        let cookie = cookie.into_owned();
-                        if cookie_store.insert_raw(&cookie, &url).is_ok() {
-                            count += 1;
-                        }
-                    }
-                    Err(_e) => {
-                        // Cookie parse failed - skip silently for now
-                    }
-                }
-            }
-            Err(_e) => {
-                // URL parse failed - skip silently for now
-            }
-        }
-    }
-
-    // Clean up temp file
-    std::fs::remove_file(&temp_path).ok();
-
-    Ok(count)
 }
 
 fn find_firefox_cookies() -> Option<PathBuf> {
