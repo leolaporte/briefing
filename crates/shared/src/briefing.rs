@@ -144,7 +144,7 @@ impl BriefingGenerator {
                         html.push_str("      <summary></summary>\n");
                         if let Some(q) = quote {
                             html.push_str(&format!(
-                                "      <p><em>\"{}\"</em></p>\n",
+                                "      <p><em>{}</em></p>\n",
                                 Self::escape_html(q)
                             ));
                         }
