@@ -191,6 +191,19 @@ async fn main() -> Result<()> {
         );
     }
 
+    // Helper to create fallback summary from Raindrop note field
+    let fallback_summary = |bookmark: &shared::raindrop::Bookmark, reason: &str| -> Summary {
+        if let Some(note) = &bookmark.note {
+            if !note.trim().is_empty() {
+                return Summary::Success {
+                    points: vec![note.clone()],
+                    quote: None,
+                };
+            }
+        }
+        Summary::Failed(reason.to_string())
+    };
+
     // Create stories for ALL bookmarks
     let stories: Vec<Story> = bookmarks
         .iter()
@@ -201,7 +214,7 @@ async fn main() -> Result<()> {
                     title: bookmark.title.clone(),
                     url: bookmark.link.clone(),
                     created: bookmark.created.clone(),
-                    summary: Summary::Failed("Paywalled - summary unavailable".to_string()),
+                    summary: fallback_summary(bookmark, "Paywalled - summary unavailable"),
                 };
             }
 
@@ -215,7 +228,7 @@ async fn main() -> Result<()> {
                 let summary = summary_map
                     .get(&bookmark.link)
                     .cloned()
-                    .unwrap_or_else(|| Summary::Failed("Summarization failed".to_string()));
+                    .unwrap_or_else(|| fallback_summary(bookmark, "Summarization failed"));
 
                 return Story {
                     title: bookmark.title.clone(),
@@ -225,12 +238,12 @@ async fn main() -> Result<()> {
                 };
             }
 
-            // No content extracted
+            // No content extracted - use excerpt if available
             Story {
                 title: bookmark.title.clone(),
                 url: bookmark.link.clone(),
                 created: bookmark.created.clone(),
-                summary: Summary::Failed("Summary not available".to_string()),
+                summary: fallback_summary(bookmark, "Summary not available"),
             }
         })
         .collect();

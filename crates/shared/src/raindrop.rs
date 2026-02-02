@@ -10,6 +10,7 @@ pub struct Bookmark {
     pub title: String,
     pub link: String,
     pub excerpt: Option<String>,
+    pub note: Option<String>,
     pub tags: Vec<String>,
     pub created: String,
 }
