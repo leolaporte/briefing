@@ -297,7 +297,7 @@ impl BriefingGenerator {
         }
 
         // Add three empty topics at the end
-        org.push_str("* Back of the Book\n\n");
+        org.push_str("* In Other News\n\n");
         org.push_str("* Leo's Picks\n\n");
         org.push_str("* In Memoriam\n\n");
 
