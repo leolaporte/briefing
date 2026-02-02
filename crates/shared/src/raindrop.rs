@@ -52,7 +52,10 @@ impl RaindropClient {
                 let mut chars = tag.chars();
                 match chars.next() {
                     None => String::new(),
-                    Some(first) => first.to_uppercase().chain(chars.as_str().to_lowercase().chars()).collect(),
+                    Some(first) => first
+                        .to_uppercase()
+                        .chain(chars.as_str().to_lowercase().chars())
+                        .collect(),
                 }
             },
         ];
