@@ -21,30 +21,40 @@ impl BriefingGenerator {
     }
 
     fn calculate_next_show_date(show_name: &str, from_date: DateTime<Utc>) -> String {
-        use chrono::{Datelike, Weekday};
+        use chrono::{Datelike, Timelike, Weekday};
 
-        let target_weekday = match show_name {
-            "This Week in Tech" => Weekday::Sun,
-            "MacBreak Weekly" => Weekday::Tue,
-            "Intelligent Machines" => Weekday::Wed,
-            _ => Weekday::Sun, // Default to Sunday
+        // Show schedule: (target weekday, cutoff hour in Pacific time)
+        // After the cutoff hour on show day, we target NEXT week's show
+        let (target_weekday, cutoff_hour) = match show_name {
+            "This Week in Tech" => (Weekday::Sun, 18),    // 6p Pacific
+            "MacBreak Weekly" => (Weekday::Tue, 14),      // 2p Pacific
+            "Intelligent Machines" => (Weekday::Wed, 18), // 6p Pacific
+            _ => (Weekday::Sun, 18),                      // Default to Sunday 6p
         };
 
         let current_day = from_date.weekday().num_days_from_monday();
         let target_day = target_weekday.num_days_from_monday();
+        let current_hour = from_date.hour();
 
         // Calculate days until next occurrence of target day
-        // If today is on or before target day this week, use this week
-        // If today is after target day, use next week
-        let days_until_target = if current_day <= target_day {
+        let days_until_target = if current_day == target_day {
+            // Today is show day - check if we're past the cutoff
+            if current_hour >= cutoff_hour {
+                7 // Past cutoff, use next week
+            } else {
+                0 // Before cutoff, use today
+            }
+        } else if current_day < target_day {
+            // Target day is later this week
             target_day - current_day
         } else {
+            // Target day already passed this week, use next week
             7 - (current_day - target_day)
         };
 
         let next_show = from_date + chrono::Duration::days(days_until_target as i64);
 
-        // Format as "Sun, 1 February 2026"
+        // Format as "Tue, 3 February 2026"
         next_show.format("%a, %-d %B %Y").to_string()
     }
 
@@ -299,5 +309,67 @@ impl BriefingGenerator {
         fs::write(&filepath, content).context("Failed to write org-mode file")?;
 
         Ok(filepath)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    #[test]
+    fn test_mbw_from_sunday_evening() {
+        // Sunday Feb 1, 2026 at 9:25 PM -> next MBW is Tuesday Feb 3
+        let date = Utc.with_ymd_and_hms(2026, 2, 1, 21, 25, 0).unwrap();
+        let result = BriefingGenerator::calculate_next_show_date("MacBreak Weekly", date);
+        assert_eq!(result, "Tue, 3 February 2026");
+    }
+
+    #[test]
+    fn test_twit_from_sunday_after_cutoff() {
+        // Sunday Feb 1, 2026 at 7 PM (after 6 PM cutoff) -> next TWiT is Feb 8
+        let date = Utc.with_ymd_and_hms(2026, 2, 1, 19, 0, 0).unwrap();
+        let result = BriefingGenerator::calculate_next_show_date("This Week in Tech", date);
+        assert_eq!(result, "Sun, 8 February 2026");
+    }
+
+    #[test]
+    fn test_twit_from_sunday_before_cutoff() {
+        // Sunday Feb 1, 2026 at 5 PM (before 6 PM cutoff) -> TWiT is today
+        let date = Utc.with_ymd_and_hms(2026, 2, 1, 17, 0, 0).unwrap();
+        let result = BriefingGenerator::calculate_next_show_date("This Week in Tech", date);
+        assert_eq!(result, "Sun, 1 February 2026");
+    }
+
+    #[test]
+    fn test_mbw_from_tuesday_after_cutoff() {
+        // Tuesday Feb 3, 2026 at 3 PM (after 2 PM cutoff) -> next MBW is Feb 10
+        let date = Utc.with_ymd_and_hms(2026, 2, 3, 15, 0, 0).unwrap();
+        let result = BriefingGenerator::calculate_next_show_date("MacBreak Weekly", date);
+        assert_eq!(result, "Tue, 10 February 2026");
+    }
+
+    #[test]
+    fn test_mbw_from_tuesday_before_cutoff() {
+        // Tuesday Feb 3, 2026 at 1 PM (before 2 PM cutoff) -> MBW is today
+        let date = Utc.with_ymd_and_hms(2026, 2, 3, 13, 0, 0).unwrap();
+        let result = BriefingGenerator::calculate_next_show_date("MacBreak Weekly", date);
+        assert_eq!(result, "Tue, 3 February 2026");
+    }
+
+    #[test]
+    fn test_im_from_wednesday_after_cutoff() {
+        // Wednesday Feb 4, 2026 at 7 PM (after 6 PM cutoff) -> next IM is Feb 11
+        let date = Utc.with_ymd_and_hms(2026, 2, 4, 19, 0, 0).unwrap();
+        let result = BriefingGenerator::calculate_next_show_date("Intelligent Machines", date);
+        assert_eq!(result, "Wed, 11 February 2026");
+    }
+
+    #[test]
+    fn test_im_from_sunday() {
+        // Sunday Feb 1, 2026 -> next IM is Wednesday Feb 4
+        let date = Utc.with_ymd_and_hms(2026, 2, 1, 21, 25, 0).unwrap();
+        let result = BriefingGenerator::calculate_next_show_date("Intelligent Machines", date);
+        assert_eq!(result, "Wed, 4 February 2026");
     }
 }
