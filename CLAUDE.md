@@ -243,3 +243,59 @@ Leo Laporte
 
 - 2026-01-31 - Initial development and prepare-briefing tool
 - 2026-02-01 - Browser cookie support implementation
+- 2026-02-02 - Test coverage (55 tests) and automation setup
+
+## Recent Changes (2026-02-02)
+
+### Test Coverage
+
+Added 55 tests across the workspace:
+- **prepare-briefing**: 11 tests (org-mode parsing, show slug extraction)
+- **shared/briefing**: 20 tests (HTML/CSV/org generation, escaping, date formatting)
+- **shared/extractor**: 9 tests (date parsing, published date extraction)
+- **shared/io**: 5 tests (save/load stories, error handling)
+- **shared/models**: 5 tests (ShowInfo, BriefingData serialization)
+
+Run tests with: `cargo test`
+
+### Automated Daily Briefing
+
+Systemd timer runs daily at 6pm Pacific to generate and upload briefings.
+
+**Show Schedule:**
+| Show | Airs | Ends |
+|------|------|------|
+| TWiT | Sunday | 6pm Pacific |
+| MacBreak Weekly | Tuesday | 3pm Pacific |
+| Intelligent Machines | Wednesday | 6pm Pacific |
+
+**Automation Schedule:**
+| Day | Time | Prepares |
+|-----|------|----------|
+| Sunday | 6pm | MBW (Tuesday) |
+| Monday | 6pm | MBW (Tuesday) |
+| Tuesday | 3pm | IM (Wednesday) |
+| Wed-Sat | 6pm | TWiT (Sunday) |
+
+**Files (in ~/Sync/dotfiles/cachyos/sway/):**
+- `scripts/podcast-briefing.sh` - Main automation script
+- `systemd/podcast-briefing.service` - Systemd service
+- `systemd/podcast-briefing.timer` - Daily 6pm trigger
+
+**Commands:**
+```bash
+# Check timer status
+systemctl --user status podcast-briefing.timer
+
+# Manual run
+systemctl --user start podcast-briefing.service
+
+# View logs
+tail -f /tmp/podcast-briefing.log
+```
+
+**Key Implementation Details:**
+- Credentials stored in `~/.config/podcast-briefing/.env` (chmod 600)
+- WebDAV upload to Fastmail: `https://myfiles.fastmail.com/Briefings/index.html`
+- Must use full binary paths (`$HOME/.local/bin/collect-stories`) since `~/.local/bin` is not in systemd's PATH
+- WebDAV path is `/Briefings/index.html` (not `/twit.show/Briefings/`)

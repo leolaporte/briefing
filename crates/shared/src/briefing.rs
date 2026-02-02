@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local, Utc};
 use std::fs;
 use std::path::PathBuf;
 
@@ -82,6 +82,7 @@ impl BriefingGenerator {
             "    h1 .show-name { display: block; font-size: 1.2em; margin-bottom: 10px; }\n",
         );
         html.push_str("    h1 .date { display: block; font-size: 0.8em; font-weight: normal; color: #555; }\n");
+        html.push_str("    h1 .prepared { display: block; font-size: 0.7em; font-weight: normal; color: #888; margin-top: 5px; }\n");
         html.push_str("    h2 { color: #34495e; margin: 0; padding: 10px; background-color: #ecf0f1; border-left: 4px solid #3498db; }\n");
         html.push_str("    h3 { color: #2c3e50; margin-top: 25px; }\n");
         html.push_str("    .metadata { color: #7f8c8d; font-size: 0.9em; margin: 5px 0; }\n");
@@ -105,10 +106,24 @@ impl BriefingGenerator {
         html.push_str("  </style>\n");
         html.push_str("</head>\n<body>\n");
 
-        // Main title (two lines)
+        // Main title (three lines)
+        // Get current local time for "Prepared" timestamp
+        let prepared_time = Local::now();
+        // Determine PST/PDT based on UTC offset (-8 = PST, -7 = PDT)
+        let tz_abbrev = if prepared_time.offset().local_minus_utc() == -8 * 3600 {
+            "PST"
+        } else {
+            "PDT"
+        };
+        let prepared_str = format!(
+            "{} {}",
+            prepared_time.format("%a %-d %b %Y at %H:%M"),
+            tz_abbrev
+        );
+
         html.push_str(&format!(
-            "<h1><span class=\"show-name\">{} Briefing</span><span class=\"date\">{}</span></h1>\n",
-            show_name, formatted_date
+            "<h1><span class=\"show-name\">{} Briefing</span><span class=\"date\">{}</span><span class=\"prepared\">(Prepared {})</span></h1>\n",
+            show_name, formatted_date, prepared_str
         ));
 
         // Topics
