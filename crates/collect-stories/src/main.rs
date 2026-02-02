@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use chrono::{Duration, Utc};
+use chrono::{Duration, Local, Utc};
 use clap::Parser;
 use shared::{
     ArticleContent, ClaudeSummarizer, Config, ContentExtractor, RaindropClient, ShowInfo, Story,
@@ -93,6 +93,9 @@ async fn main() -> Result<()> {
 
     let now = Utc::now();
     let since = now - Duration::days(args.days);
+
+    // Use local time for show date calculation (Pacific time zone)
+    let local_now = Local::now().with_timezone(&Utc);
 
     println!("\n📚 Fetching bookmarks from Raindrop.io...");
     let raindrop_client = RaindropClient::new(config.raindrop_api_token)?;
@@ -235,9 +238,9 @@ async fn main() -> Result<()> {
 
     println!("\n📝 Generating org-mode document...");
     let org_content =
-        shared::briefing::BriefingGenerator::generate_org_mode(&topics, &show_info.name, now);
+        shared::briefing::BriefingGenerator::generate_org_mode(&topics, &show_info.name, local_now);
     let org_filepath =
-        shared::briefing::BriefingGenerator::save_org_mode(&org_content, &show_info.slug, now)
+        shared::briefing::BriefingGenerator::save_org_mode(&org_content, &show_info.slug, local_now)
             .context("Failed to save org-mode file")?;
 
     println!(

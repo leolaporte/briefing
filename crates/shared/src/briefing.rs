@@ -24,7 +24,7 @@ impl BriefingGenerator {
         use chrono::{Datelike, Weekday};
 
         let target_weekday = match show_name {
-            "TWiT" => Weekday::Sun,
+            "This Week in Tech" => Weekday::Sun,
             "MacBreak Weekly" => Weekday::Tue,
             "Intelligent Machines" => Weekday::Wed,
             _ => Weekday::Sun, // Default to Sunday
@@ -33,6 +33,9 @@ impl BriefingGenerator {
         let current_day = from_date.weekday().num_days_from_monday();
         let target_day = target_weekday.num_days_from_monday();
 
+        // Calculate days until next occurrence of target day
+        // If today is on or before target day this week, use this week
+        // If today is after target day, use next week
         let days_until_target = if current_day <= target_day {
             target_day - current_day
         } else {
