@@ -81,6 +81,32 @@ fn load_chrome_cookies_from_db(db_path: &PathBuf, cookie_store: &mut CookieStore
 
     let conn = Connection::open(&temp_path).context("Failed to open cookies database")?;
 
+    // Check if Chrome is using encrypted cookies (common on Linux)
+    let encrypted_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM cookies WHERE encrypted_value != x''",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    let unencrypted_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM cookies WHERE value != ''",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    if encrypted_count > 0 && unencrypted_count == 0 {
+        std::fs::remove_file(&temp_path).ok();
+        anyhow::bail!(
+            "Chrome cookies are encrypted (found {} encrypted cookies). \
+            Please use Firefox or manually export cookies.",
+            encrypted_count
+        );
+    }
+
     let mut stmt = conn.prepare(
         "SELECT host_key, path, is_secure, expires_utc, name, value, is_httponly
          FROM cookies
@@ -117,19 +143,32 @@ fn load_chrome_cookies_from_db(db_path: &PathBuf, cookie_store: &mut CookieStore
 
         // Parse and insert into cookie store
         // We need a URL to associate the cookie with
+        // Use a domain without leading dot, and add a valid path
+        let clean_host = host.trim_start_matches('.');
+        let clean_path = if path.is_empty() { "/" } else { &path };
         let url_str = format!(
             "{}://{}{}",
             if is_secure != 0 { "https" } else { "http" },
-            host.trim_start_matches('.'),
-            path
+            clean_host,
+            clean_path
         );
 
-        if let Ok(url) = Url::parse(&url_str) {
-            // Use the cookie crate's parse method (re-exported by cookie_store)
-            if let Ok(cookie) = cookie_store::RawCookie::parse(&cookie_str) {
-                let cookie = cookie.into_owned();
-                cookie_store.insert_raw(&cookie, &url).ok();
-                count += 1;
+        match Url::parse(&url_str) {
+            Ok(url) => {
+                match cookie_store::RawCookie::parse(&cookie_str) {
+                    Ok(cookie) => {
+                        let cookie = cookie.into_owned();
+                        if cookie_store.insert_raw(&cookie, &url).is_ok() {
+                            count += 1;
+                        }
+                    }
+                    Err(_e) => {
+                        // Cookie parse failed - skip silently for now
+                    }
+                }
+            }
+            Err(_e) => {
+                // URL parse failed - skip silently for now
             }
         }
     }

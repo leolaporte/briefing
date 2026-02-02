@@ -320,12 +320,13 @@ Blank rows separate topics for easy reading.
 `collect-stories` automatically loads browser cookies to access paywalled content:
 
 **Supported Browsers:**
-- **Chrome/Chromium** (tried first)
-  - Cookie database: `~/.config/google-chrome/Default/Cookies`
-  - Uses Windows FILETIME epoch for timestamps
-- **Firefox** (fallback)
+- **Firefox** (recommended)
   - Cookie database: `~/.mozilla/firefox/*/cookies.sqlite`
   - Uses Unix epoch for timestamps
+  - Works reliably on Linux
+- **Chrome/Chromium** (limited support)
+  - Cookie database: `~/.config/google-chrome/Default/Cookies`
+  - ⚠️ **Note:** Chrome encrypts cookies on Linux - see troubleshooting below
 
 **How it works:**
 1. Loads cookies from browser database before fetching articles
@@ -337,6 +338,9 @@ Blank rows separate topics for easy reading.
 - You must be logged into the site in your browser
 - Browser must store persistent cookies (not incognito/private mode)
 - Works with sites you have active subscriptions to
+
+**Chrome Encryption Issue (Linux):**
+Chrome/Chromium on Linux encrypts cookie values using the system keyring. The tool currently cannot decrypt these cookies. **Workaround:** Use Firefox for accessing paywalled sites, or use a browser extension to export cookies manually.
 
 **Privacy note:** Cookies are only read locally and used for article fetching. They are never uploaded or shared.
 
