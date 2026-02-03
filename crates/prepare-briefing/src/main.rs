@@ -24,7 +24,8 @@ struct Args {
     file: Option<PathBuf>,
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     let args = Args::parse();
 
     let org_file = if let Some(path) = args.file {
@@ -81,7 +82,78 @@ fn main() -> Result<()> {
 
     println!("✓ CSV saved to: {}", csv_filepath.display());
 
-    println!("\n✅ Done! Files ready for upload to Google Docs.");
+    // Upload to Fastmail WebDAV
+    println!("\n☁️  Uploading to Fastmail...");
+    match upload_to_fastmail(&show_slug, &html_filepath, &csv_filepath).await {
+        Ok(()) => {
+            println!("✓ Uploaded to Fastmail WebDAV");
+        }
+        Err(e) => {
+            println!("⚠ Upload failed: {} (files saved locally)", e);
+        }
+    }
+
+    println!("\n✅ Done!");
+
+    Ok(())
+}
+
+async fn upload_to_fastmail(
+    show_slug: &str,
+    html_path: &Path,
+    csv_path: &Path,
+) -> Result<()> {
+    // Load credentials from .env file
+    let env_path = dirs::home_dir()
+        .ok_or_else(|| anyhow::anyhow!("Could not find home directory"))?
+        .join(".config/podcast-briefing/.env");
+
+    dotenvy::from_path(&env_path)
+        .context(format!("Failed to load credentials from {}", env_path.display()))?;
+
+    let fastmail_user = std::env::var("FASTMAIL_USER")
+        .context("FASTMAIL_USER not set in .env")?;
+    let fastmail_password = std::env::var("FASTMAIL_PASSWORD")
+        .context("FASTMAIL_PASSWORD not set in .env")?;
+
+    let base_url = "https://myfiles.fastmail.com/Briefings";
+    let client = reqwest::Client::new();
+
+    // Upload HTML as index.html
+    let html_url = format!("{}/{}/index.html", base_url, show_slug);
+    let html_content = fs::read(html_path)
+        .context("Failed to read HTML file for upload")?;
+
+    let response = client
+        .put(&html_url)
+        .basic_auth(&fastmail_user, Some(&fastmail_password))
+        .body(html_content)
+        .send()
+        .await
+        .context("Failed to upload HTML")?;
+
+    if !response.status().is_success() {
+        anyhow::bail!("HTML upload failed: HTTP {}", response.status());
+    }
+    println!("  ✓ HTML → {}", html_url);
+
+    // Upload CSV as links.csv
+    let csv_url = format!("{}/{}/links.csv", base_url, show_slug);
+    let csv_content = fs::read(csv_path)
+        .context("Failed to read CSV file for upload")?;
+
+    let response = client
+        .put(&csv_url)
+        .basic_auth(&fastmail_user, Some(&fastmail_password))
+        .body(csv_content)
+        .send()
+        .await
+        .context("Failed to upload CSV")?;
+
+    if !response.status().is_success() {
+        anyhow::bail!("CSV upload failed: HTTP {}", response.status());
+    }
+    println!("  ✓ CSV  → {}", csv_url);
 
     Ok(())
 }
