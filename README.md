@@ -30,10 +30,19 @@ Converts manually-edited org-mode documents to HTML and CSV formats ready for up
 ### prepare-briefing
 
 - **Org-Mode Parsing**: Reads and parses manually-edited org files
-- **HTML Generation**: Beautiful, collapsible HTML briefings with two-line titles
+- **HTML Generation**: Beautiful, collapsible HTML briefings with three-line titles
 - **CSV Export**: Links spreadsheet formatted for Google Sheets
+- **Fastmail WebDAV Upload**: Automatically uploads HTML and CSV to Fastmail
 - **Interactive File Selection**: Lists available org files sorted by modification time
 - **Preserves Edits**: Works with your manually reordered and edited content
+
+### Automated Daily Briefings
+
+- **Systemd Timer**: Runs daily at 6pm Pacific
+- **All Shows Daily**: Processes TWiT, MBW, and IM on every run
+- **Smart Lookback**: Only collects stories since each show's previous episode
+- **WebDAV Upload**: Uploads to show-specific Fastmail folders
+- **Sleep/Wake Handling**: Runs missed jobs after laptop wakes
 
 ---
 
@@ -136,12 +145,15 @@ prepare-briefing --file ~/Documents/twit-2026-01-31.org
 2. 🔍 Parses topics, stories, and summaries
 3. 📝 Generates HTML briefing with collapsible topics
 4. 📊 Generates CSV with links for spreadsheet
+5. ☁️ Uploads both files to Fastmail WebDAV
 
 **Outputs:**
-- `~/Documents/twit-2026-01-31.html` - HTML briefing for Google Docs
-- `~/Documents/twit-2026-01-31-LINKS.csv` - Links spreadsheet
+- `~/Documents/twit-2026-01-31.html` - HTML briefing (also uploaded)
+- `~/Documents/twit-2026-01-31-LINKS.csv` - Links spreadsheet (also uploaded)
 
-Upload these files to Google Docs for your producers and hosts.
+**Fastmail URLs:**
+- `https://myfiles.fastmail.com/Briefings/twit/index.html`
+- `https://myfiles.fastmail.com/Briefings/twit/links.csv`
 
 ---
 
@@ -272,15 +284,16 @@ Files are sorted by modification time (newest first).
 
 ### HTML Output Format
 
-**Title Format (Two Lines):**
+**Title Format (Three Lines):**
 ```
 TWiT Briefing
-Sunday, 2 February 2026
+For Sunday, 8 February 2026
+(Prepared Mon 2 Feb 2026 at 16:01 PST)
 ```
 
 **Features:**
 - Clean, professional styling with Arial font
-- Centered two-line title (show name larger, date smaller and gray)
+- Centered three-line title (show name, target date, preparation timestamp)
 - Collapsible topics (click to expand/collapse)
 - Blue accents and borders
 - Responsive layout (max-width 900px, centered)
@@ -310,6 +323,71 @@ Example:
 ```
 
 Blank rows separate topics for easy reading.
+
+---
+
+## Automated Daily Briefings
+
+A systemd timer runs daily at 6pm Pacific to automatically generate and upload briefings for all three shows.
+
+### Show Schedule
+
+| Show | Airs | Ends |
+|------|------|------|
+| TWiT | Sunday | 6pm Pacific |
+| MacBreak Weekly | Tuesday | 3pm Pacific |
+| Intelligent Machines | Wednesday | 6pm Pacific |
+
+### How It Works
+
+1. **Daily at 6pm**: Timer triggers `podcast-briefing.sh`
+2. **All Shows**: Processes TWiT, MBW, and IM in sequence
+3. **Smart Lookback**: Each show only collects stories since its previous episode ended
+4. **WebDAV Upload**: Uploads HTML to show-specific Fastmail folders
+
+### Fastmail URLs
+
+| Show | URL |
+|------|-----|
+| TWiT | `https://myfiles.fastmail.com/Briefings/twit/index.html` |
+| MBW | `https://myfiles.fastmail.com/Briefings/mbw/index.html` |
+| IM | `https://myfiles.fastmail.com/Briefings/im/index.html` |
+
+### Setup
+
+```bash
+# Install systemd files
+mkdir -p ~/.config/systemd/user
+cp ~/Sync/dotfiles/cachyos/sway/systemd/podcast-briefing.* ~/.config/systemd/user/
+
+# Enable timer
+systemctl --user daemon-reload
+systemctl --user enable --now podcast-briefing.timer
+
+# Check status
+systemctl --user status podcast-briefing.timer
+```
+
+### Manual Run
+
+```bash
+# Run all shows now
+~/.local/bin/podcast-briefing.sh
+
+# Check logs
+tail -f /tmp/podcast-briefing.log
+```
+
+### Credentials
+
+Create `~/.config/podcast-briefing/.env`:
+
+```bash
+RAINDROP_API_TOKEN=your_token
+ANTHROPIC_API_KEY=your_key
+FASTMAIL_USER=user@domain.com
+FASTMAIL_PASSWORD=app_password
+```
 
 ---
 
