@@ -122,7 +122,7 @@ impl BriefingGenerator {
         );
 
         html.push_str(&format!(
-            "<h1><span class=\"show-name\">{} Briefing</span><span class=\"date\">{}</span><span class=\"prepared\">(Prepared {})</span></h1>\n",
+            "<h1><span class=\"show-name\">{} Briefing</span><span class=\"date\">For {}</span><span class=\"prepared\">(Prepared {})</span></h1>\n",
             show_name, formatted_date, prepared_str
         ));
 
