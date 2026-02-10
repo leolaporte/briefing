@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use chrono::{DateTime, FixedOffset, NaiveDate};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
@@ -240,6 +241,17 @@ Important: Every article index from 0 to {} must appear in exactly one topic."#,
                     topic_stories.push(stories[idx].clone());
                 }
             }
+            // Sort stories oldest-first so the org file starts in chronological order
+            topic_stories.sort_by(|a, b| {
+                let date_a = parse_date_for_sorting(&a.created);
+                let date_b = parse_date_for_sorting(&b.created);
+                match (date_a, date_b) {
+                    (Some(a), Some(b)) => a.cmp(&b),
+                    (Some(_), None) => std::cmp::Ordering::Less,
+                    (None, Some(_)) => std::cmp::Ordering::Greater,
+                    (None, None) => std::cmp::Ordering::Equal,
+                }
+            });
             if !topic_stories.is_empty() {
                 topics.push(Topic {
                     title: cluster.title,
@@ -261,4 +273,22 @@ Important: Every article index from 0 to {} must appear in exactly one topic."#,
             stories,
         }]
     }
+}
+
+/// Parse a date string for sorting. Handles RFC 3339 and common date-only formats.
+fn parse_date_for_sorting(date_str: &str) -> Option<DateTime<FixedOffset>> {
+    if date_str.is_empty() {
+        return None;
+    }
+    if let Ok(dt) = DateTime::parse_from_rfc3339(date_str) {
+        return Some(dt);
+    }
+    for fmt in &["%a, %e %b %Y", "%a, %d %b %Y", "%e %b %Y", "%d %b %Y", "%Y-%m-%d"] {
+        if let Ok(nd) = NaiveDate::parse_from_str(date_str.trim(), fmt) {
+            return nd
+                .and_hms_opt(0, 0, 0)
+                .map(|ndt| ndt.and_utc().fixed_offset());
+        }
+    }
+    None
 }

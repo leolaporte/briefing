@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use chrono::{DateTime, Datelike, FixedOffset, Local, NaiveDate, TimeZone, Timelike, Utc};
+use chrono::{Datelike, Local, TimeZone, Timelike, Utc};
 use clap::Parser;
 use shared::{Story, Summary, Topic};
 use std::fs::{self, OpenOptions};
@@ -382,42 +382,9 @@ fn parse_org_mode(content: &str) -> Result<(String, Vec<Topic>)> {
         );
     }
 
-    // Sort stories within each topic by publication date (oldest first, undated at end)
-    for topic in &mut topics {
-        topic.stories.sort_by(|a, b| {
-            let date_a = parse_date_for_sorting(&a.created);
-            let date_b = parse_date_for_sorting(&b.created);
-            match (date_a, date_b) {
-                (Some(a), Some(b)) => a.cmp(&b),
-                (Some(_), None) => std::cmp::Ordering::Less,
-                (None, Some(_)) => std::cmp::Ordering::Greater,
-                (None, None) => std::cmp::Ordering::Equal,
-            }
-        });
-    }
+    // Preserve org file order — user may have manually reordered stories after editing
 
     Ok((show_name, topics))
-}
-
-/// Try to parse a date string for sorting. Handles RFC 3339 and common date-only formats.
-fn parse_date_for_sorting(date_str: &str) -> Option<DateTime<FixedOffset>> {
-    if date_str.is_empty() {
-        return None;
-    }
-    if let Ok(dt) = DateTime::parse_from_rfc3339(date_str) {
-        return Some(dt);
-    }
-    if let Ok(dt) = DateTime::parse_from_rfc2822(&format!("{} 00:00:00 +0000", date_str)) {
-        return Some(dt);
-    }
-    for fmt in &["%a, %e %b %Y", "%a, %d %b %Y", "%e %b %Y", "%d %b %Y", "%Y-%m-%d"] {
-        if let Ok(nd) = NaiveDate::parse_from_str(date_str.trim(), fmt) {
-            return nd
-                .and_hms_opt(0, 0, 0)
-                .map(|ndt| ndt.and_utc().fixed_offset());
-        }
-    }
-    None
 }
 
 #[cfg(test)]
