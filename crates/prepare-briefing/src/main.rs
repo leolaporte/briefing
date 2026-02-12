@@ -250,7 +250,13 @@ fn parse_org_mode(content: &str) -> Result<(String, Vec<Topic>)> {
     let mut current_topic: Option<Topic> = None;
     let mut current_story: Option<Story> = None;
     let mut current_section: Option<String> = None;
-    let mut summary_points: Vec<String> = Vec::new();
+    let mut whats_happening: Option<String> = None;
+    let mut why_it_matters: Option<String> = None;
+    let mut big_picture: Option<String> = None;
+    let mut the_product: Option<String> = None;
+    let mut cost: Option<String> = None;
+    let mut availability: Option<String> = None;
+    let mut platforms: Option<String> = None;
     let mut quote: Option<String> = None;
 
     for line in lines {
@@ -315,7 +321,13 @@ fn parse_org_mode(content: &str) -> Result<(String, Vec<Topic>)> {
                 summary: Summary::Insufficient,
             });
             current_section = None;
-            summary_points.clear();
+            whats_happening = None;
+            why_it_matters = None;
+            big_picture = None;
+            the_product = None;
+            cost = None;
+            availability = None;
+            platforms = None;
             quote = None;
             continue;
         }
@@ -341,18 +353,41 @@ fn parse_org_mode(content: &str) -> Result<(String, Vec<Topic>)> {
                         }
                     }
                     "Summary" => {
-                        // Check if it's a quote line
-                        if trimmed.starts_with('"') && !trimmed.starts_with("- ") {
+                        if trimmed.starts_with('"') {
                             quote = Some(trimmed.to_string());
-                        } else if let Some(point) = trimmed.strip_prefix("- ") {
-                            summary_points.push(point.trim().to_string());
+                        } else if let Some(val) = trimmed.strip_prefix("What's happening: ") {
+                            whats_happening = Some(val.to_string());
+                        } else if let Some(val) = trimmed.strip_prefix("Why it matters: ") {
+                            why_it_matters = Some(val.to_string());
+                        } else if let Some(val) = trimmed.strip_prefix("The big picture: ") {
+                            big_picture = Some(val.to_string());
+                        } else if let Some(val) = trimmed.strip_prefix("The product: ") {
+                            the_product = Some(val.to_string());
+                        } else if let Some(val) = trimmed.strip_prefix("Cost: ") {
+                            cost = Some(val.to_string());
+                        } else if let Some(val) = trimmed.strip_prefix("Availability: ") {
+                            availability = Some(val.to_string());
+                        } else if let Some(val) = trimmed.strip_prefix("Platforms: ") {
+                            platforms = Some(val.to_string());
                         }
 
-                        // If we have accumulated points, create the summary
-                        if !summary_points.is_empty() {
-                            if let Some(ref mut story) = current_story {
-                                story.summary = Summary::Success {
-                                    points: summary_points.clone(),
+                        // Build summary from accumulated fields
+                        if let Some(ref mut story) = current_story {
+                            if let Some(ref prod) = the_product {
+                                story.summary = Summary::Product {
+                                    the_product: prod.clone(),
+                                    cost: cost.clone().unwrap_or_default(),
+                                    availability: availability.clone().unwrap_or_default(),
+                                    platforms: platforms.clone().unwrap_or_default(),
+                                    quote: quote.clone(),
+                                };
+                            } else if let (Some(ref wh), Some(ref wm)) =
+                                (&whats_happening, &why_it_matters)
+                            {
+                                story.summary = Summary::Editorial {
+                                    whats_happening: wh.clone(),
+                                    why_it_matters: wm.clone(),
+                                    big_picture: big_picture.clone().unwrap_or_default(),
                                     quote: quote.clone(),
                                 };
                             }
@@ -424,7 +459,7 @@ mod tests {
     // ==================== parse_org_mode Tests ====================
 
     #[test]
-    fn test_parse_org_mode_basic() {
+    fn test_parse_org_mode_editorial() {
         let content = r#"#+TITLE: TWiT Briefing Book
 #+DATE: Sun, 2 February 2026
 
@@ -439,8 +474,9 @@ https://example.com/iphone17
 2026-02-01
 
 *** Summary
-- New chip announced
-- Better battery life
+What's happening: Apple announced the iPhone 17 with a new A19 chip.
+Why it matters: The new chip delivers 40% better performance.
+The big picture: Apple continues to push custom silicon across its lineup.
 "#;
 
         let (show_name, topics) = parse_org_mode(content).unwrap();
@@ -452,11 +488,18 @@ https://example.com/iphone17
         assert_eq!(topics[0].stories[0].title, "iPhone 17 Announced");
         assert_eq!(topics[0].stories[0].url, "https://example.com/iphone17");
 
-        if let Summary::Success { points, .. } = &topics[0].stories[0].summary {
-            assert_eq!(points.len(), 2);
-            assert_eq!(points[0], "New chip announced");
+        if let Summary::Editorial {
+            whats_happening,
+            why_it_matters,
+            big_picture,
+            ..
+        } = &topics[0].stories[0].summary
+        {
+            assert!(whats_happening.contains("iPhone 17"));
+            assert!(why_it_matters.contains("40%"));
+            assert!(big_picture.contains("custom silicon"));
         } else {
-            panic!("Expected Summary::Success");
+            panic!("Expected Summary::Editorial");
         }
     }
 
@@ -472,19 +515,56 @@ https://example.com/iphone17
 https://test.com
 
 *** Summary
-"This is a quote" - Author Name
-- Point one
-- Point two
+"This is a quote" -- Author Name
+
+What's happening: Something happened.
+Why it matters: It matters because of reasons.
 "#;
 
         let (_, topics) = parse_org_mode(content).unwrap();
 
-        if let Summary::Success { points, quote } = &topics[0].stories[0].summary {
-            assert_eq!(points.len(), 2);
+        if let Summary::Editorial { quote, .. } = &topics[0].stories[0].summary {
             assert!(quote.is_some());
             assert!(quote.as_ref().unwrap().contains("This is a quote"));
         } else {
-            panic!("Expected Summary::Success");
+            panic!("Expected Summary::Editorial");
+        }
+    }
+
+    #[test]
+    fn test_parse_org_mode_product() {
+        let content = r#"#+TITLE: Test Briefing
+
+* Products
+
+** New Gadget Review
+
+*** URL
+https://test.com/gadget
+
+*** Summary
+The product: A revolutionary new widget that does everything.
+Cost: Starting at $299.
+Availability: Ships March 2026.
+Platforms: iOS, Android, Web.
+"#;
+
+        let (_, topics) = parse_org_mode(content).unwrap();
+
+        if let Summary::Product {
+            the_product,
+            cost,
+            availability,
+            platforms,
+            ..
+        } = &topics[0].stories[0].summary
+        {
+            assert!(the_product.contains("revolutionary"));
+            assert!(cost.contains("$299"));
+            assert!(availability.contains("March"));
+            assert!(platforms.contains("iOS"));
+        } else {
+            panic!("Expected Summary::Product");
         }
     }
 
@@ -500,7 +580,8 @@ https://test.com
 https://apple.com
 
 *** Summary
-- Point
+What's happening: Apple did something.
+Why it matters: It matters.
 
 * Google
 
@@ -510,7 +591,8 @@ https://apple.com
 https://google.com
 
 *** Summary
-- Another point
+What's happening: Google did something.
+Why it matters: It also matters.
 "#;
 
         let (_, topics) = parse_org_mode(content).unwrap();
@@ -532,7 +614,8 @@ https://google.com
 https://example.com
 
 *** Summary
-- Point
+What's happening: Something happened.
+Why it matters: It matters.
 
 * Empty Topic
 
@@ -560,7 +643,8 @@ https://example.com
 https://test.com
 
 *** Summary
-- Point
+What's happening: Something happened.
+Why it matters: It matters.
 "#;
 
         let (show_name, _) = parse_org_mode(content).unwrap();
@@ -596,7 +680,8 @@ https://test.com
 Sat, 1 Feb 2026
 
 *** Summary
-- Point
+What's happening: Something happened.
+Why it matters: It matters.
 "#;
 
         let (_, topics) = parse_org_mode(content).unwrap();

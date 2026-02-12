@@ -8,8 +8,17 @@ use tokio::sync::Semaphore;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Summary {
-    Success {
-        points: Vec<String>,
+    Editorial {
+        whats_happening: String,
+        why_it_matters: String,
+        big_picture: String,
+        quote: Option<String>,
+    },
+    Product {
+        the_product: String,
+        cost: String,
+        availability: String,
+        platforms: String,
         quote: Option<String>,
     },
     Insufficient,
@@ -113,38 +122,41 @@ impl ClaudeSummarizer {
         };
 
         let prompt = format!(
-            r#"You are a text summarization specialist. Extract exactly 5 key points from the article below, and if there are any direct quotes, extract the most important one with attribution.
+            r#"You are a journalist writing in Axios Smart Brevity style. Summarize the article below using the appropriate format.
+
+First, determine: Is this article primarily about a specific PRODUCT (hardware, software, app, device) or is it EDITORIAL (news, policy, analysis, industry event)?
 
 RULES:
-1. Each point must be under 20 words
-2. Use ONLY text from the article - no external knowledge
-3. Each point must be supported by specific article content
-4. If fewer than 5 valid points exist, respond with: "Insufficient content for summary"
-5. Format: Bullet points using dashes (-)
-6. Use only factual statements from the article text
-7. If there are direct quotes in the article, select the most important one (often the first quote, but use your judgment)
-8. The quote should be on a line starting with "QUOTE: " followed by the quote text in quotation marks and attribution
-9. Format for quotes: QUOTE: "quote text" -- Speaker Name
+1. Use ONLY information from the article - no external knowledge
+2. Each section should be 1-2 concise sentences
+3. If the article has insufficient content, respond with: "Insufficient content for summary"
+4. If there are direct quotes with clear speaker attribution, include the most important one
+
+If EDITORIAL, respond in this exact format:
+FORMAT: EDITORIAL
+WHATS_HAPPENING: One strong sentence capturing the core news or development.
+WHY_IT_MATTERS: 1-2 sentences explaining why this is significant.
+BIG_PICTURE: One sentence on broader industry or societal implications. Omit this line if the article is too narrow for broader context.
+QUOTE: "quote text" -- Speaker Name
+
+If PRODUCT, respond in this exact format:
+FORMAT: PRODUCT
+THE_PRODUCT: What the product is and what it does (1-2 sentences).
+COST: Pricing details. Omit this line if pricing is not mentioned.
+AVAILABILITY: When and where it is available. Omit this line if not mentioned.
+PLATFORMS: What platforms or operating systems it runs on. Omit this line for hardware-only products or if not mentioned.
+QUOTE: "quote text" -- Speaker Name
+
+Omit the QUOTE line if there are no quotes or no clear speaker attribution in the article.
 
 Article:
-{}
-
-Format your response as:
-QUOTE: "the most important quote if one exists" -- Speaker Name
-- First key point
-- Second key point
-- Third key point
-- Fourth key point
-- Fifth key point
-
-If there are no quotes in the article, omit the QUOTE line entirely.
-If there's a quote but no clear speaker attribution in the article, omit the QUOTE line."#,
+{}"#,
             truncated_content
         );
 
         let request = ClaudeRequest {
             model: "claude-3-5-haiku-20241022".to_string(),
-            max_tokens: 512,
+            max_tokens: 768,
             messages: vec![Message {
                 role: "user".to_string(),
                 content: prompt,
@@ -185,24 +197,19 @@ If there's a quote but no clear speaker attribution in the article, omit the QUO
             return Ok(Summary::Insufficient);
         }
 
-        let (quote, bullets) = self.parse_summary_with_quote(summary_text);
-
-        if bullets.len() == 5 {
-            Ok(Summary::Success {
-                points: bullets,
-                quote,
-            })
-        } else {
-            Ok(Summary::Failed(format!(
-                "Expected 5 bullets, got {}",
-                bullets.len()
-            )))
-        }
+        self.parse_smart_brevity(summary_text)
     }
 
-    fn parse_summary_with_quote(&self, text: &str) -> (Option<String>, Vec<String>) {
+    fn parse_smart_brevity(&self, text: &str) -> Result<Summary> {
+        let mut format_type = None;
         let mut quote = None;
-        let mut bullets = Vec::new();
+        let mut whats_happening = String::new();
+        let mut why_it_matters = String::new();
+        let mut big_picture = String::new();
+        let mut the_product = String::new();
+        let mut cost = String::new();
+        let mut availability = String::new();
+        let mut platforms = String::new();
 
         for line in text.lines() {
             let trimmed = line.trim();
@@ -210,62 +217,63 @@ If there's a quote but no clear speaker attribution in the article, omit the QUO
                 continue;
             }
 
-            // Check for quote line
-            if trimmed.starts_with("QUOTE:") {
-                let quote_text = trimmed.strip_prefix("QUOTE:").unwrap().trim();
-                // Keep the quote as-is (it already includes quotes and attribution)
-                if !quote_text.is_empty() {
-                    quote = Some(quote_text.to_string());
-                }
-                continue;
-            }
-
-            // Check for bullet points
-            if let Some(stripped) = trimmed.strip_prefix(|c: char| c.is_numeric()) {
-                let stripped = stripped
-                    .trim_start_matches(|c: char| c == '.' || c == ')' || c.is_whitespace());
-                if !stripped.is_empty() {
-                    bullets.push(stripped.to_string());
-                }
-                continue;
-            }
-
-            if trimmed.starts_with('-') || trimmed.starts_with('*') || trimmed.starts_with('•') {
-                let stripped = trimmed[1..].trim();
-                if !stripped.is_empty() {
-                    bullets.push(stripped.to_string());
+            if let Some(fmt) = trimmed.strip_prefix("FORMAT:") {
+                format_type = Some(fmt.trim().to_uppercase());
+            } else if let Some(val) = trimmed.strip_prefix("WHATS_HAPPENING:") {
+                whats_happening = val.trim().to_string();
+            } else if let Some(val) = trimmed.strip_prefix("WHY_IT_MATTERS:") {
+                why_it_matters = val.trim().to_string();
+            } else if let Some(val) = trimmed.strip_prefix("BIG_PICTURE:") {
+                big_picture = val.trim().to_string();
+            } else if let Some(val) = trimmed.strip_prefix("THE_PRODUCT:") {
+                the_product = val.trim().to_string();
+            } else if let Some(val) = trimmed.strip_prefix("COST:") {
+                cost = val.trim().to_string();
+            } else if let Some(val) = trimmed.strip_prefix("AVAILABILITY:") {
+                availability = val.trim().to_string();
+            } else if let Some(val) = trimmed.strip_prefix("PLATFORMS:") {
+                platforms = val.trim().to_string();
+            } else if let Some(val) = trimmed.strip_prefix("QUOTE:") {
+                let val = val.trim();
+                if !val.is_empty() {
+                    quote = Some(val.to_string());
                 }
             }
         }
 
-        (quote, bullets)
-    }
+        // Auto-detect format from content if FORMAT: line is missing
+        let is_product = match format_type.as_deref() {
+            Some("PRODUCT") => true,
+            Some("EDITORIAL") => false,
+            _ => !the_product.is_empty(),
+        };
 
-    #[allow(dead_code)]
-    fn parse_bullet_points(&self, text: &str) -> Vec<String> {
-        text.lines()
-            .filter_map(|line| {
-                let trimmed = line.trim();
-                if trimmed.is_empty() {
-                    return None;
-                }
-                if let Some(stripped) = trimmed.strip_prefix(|c: char| c.is_numeric()) {
-                    let stripped = stripped
-                        .trim_start_matches(|c: char| c == '.' || c == ')' || c.is_whitespace());
-                    if !stripped.is_empty() {
-                        return Some(stripped.to_string());
-                    }
-                }
-                if trimmed.starts_with('-') || trimmed.starts_with('*') || trimmed.starts_with('•')
-                {
-                    let stripped = trimmed[1..].trim();
-                    if !stripped.is_empty() {
-                        return Some(stripped.to_string());
-                    }
-                }
-                None
+        if is_product {
+            if the_product.is_empty() {
+                return Ok(Summary::Failed(
+                    "Product format missing THE_PRODUCT field".to_string(),
+                ));
+            }
+            Ok(Summary::Product {
+                the_product,
+                cost,
+                availability,
+                platforms,
+                quote,
             })
-            .collect()
+        } else {
+            if whats_happening.is_empty() || why_it_matters.is_empty() {
+                return Ok(Summary::Failed(
+                    "Editorial format missing required fields".to_string(),
+                ));
+            }
+            Ok(Summary::Editorial {
+                whats_happening,
+                why_it_matters,
+                big_picture,
+                quote,
+            })
+        }
     }
 
     pub async fn summarize_articles_parallel(

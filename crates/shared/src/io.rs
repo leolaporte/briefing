@@ -115,8 +115,10 @@ mod tests {
             title: "Test Article".to_string(),
             url: "https://example.com".to_string(),
             created: "2026-02-01".to_string(),
-            summary: Summary::Success {
-                points: vec!["Point 1".to_string()],
+            summary: Summary::Editorial {
+                whats_happening: "New development announced".to_string(),
+                why_it_matters: "It changes the industry".to_string(),
+                big_picture: String::new(),
                 quote: None,
             },
         };

@@ -158,23 +158,73 @@ impl BriefingGenerator {
                 html.push_str("    </div>\n");
 
                 match &story.summary {
-                    Summary::Success { points, quote } => {
+                    Summary::Editorial {
+                        whats_happening,
+                        why_it_matters,
+                        big_picture,
+                        quote,
+                    } => {
                         html.push_str("    <details class=\"article\" open>\n");
                         html.push_str("      <summary></summary>\n");
                         if let Some(q) = quote {
                             html.push_str(&format!(
-                                "      <p><em>{}</em></p>\n",
-                                Self::escape_html(q)
+                                "      <p>{}</p>\n",
+                                Self::format_quote_html(q)
                             ));
                         }
-                        html.push_str("      <ul>\n");
-                        for point in points.iter() {
+                        html.push_str(&format!(
+                            "      <p><strong>What's happening:</strong> {}</p>\n",
+                            Self::escape_html(whats_happening)
+                        ));
+                        html.push_str(&format!(
+                            "      <p><strong>Why it matters:</strong> {}</p>\n",
+                            Self::escape_html(why_it_matters)
+                        ));
+                        if !big_picture.is_empty() {
                             html.push_str(&format!(
-                                "        <li>{}</li>\n",
-                                Self::escape_html(point)
+                                "      <p><strong>The big picture:</strong> {}</p>\n",
+                                Self::escape_html(big_picture)
                             ));
                         }
-                        html.push_str("      </ul>\n");
+                        html.push_str("    </details>\n");
+                    }
+                    Summary::Product {
+                        the_product,
+                        cost,
+                        availability,
+                        platforms,
+                        quote,
+                    } => {
+                        html.push_str("    <details class=\"article\" open>\n");
+                        html.push_str("      <summary></summary>\n");
+                        if let Some(q) = quote {
+                            html.push_str(&format!(
+                                "      <p>{}</p>\n",
+                                Self::format_quote_html(q)
+                            ));
+                        }
+                        html.push_str(&format!(
+                            "      <p><strong>The product:</strong> {}</p>\n",
+                            Self::escape_html(the_product)
+                        ));
+                        if !cost.is_empty() {
+                            html.push_str(&format!(
+                                "      <p><strong>Cost:</strong> {}</p>\n",
+                                Self::escape_html(cost)
+                            ));
+                        }
+                        if !availability.is_empty() {
+                            html.push_str(&format!(
+                                "      <p><strong>Availability:</strong> {}</p>\n",
+                                Self::escape_html(availability)
+                            ));
+                        }
+                        if !platforms.is_empty() {
+                            html.push_str(&format!(
+                                "      <p><strong>Platforms:</strong> {}</p>\n",
+                                Self::escape_html(platforms)
+                            ));
+                        }
                         html.push_str("    </details>\n");
                     }
                     Summary::Insufficient | Summary::Failed(_) => {
@@ -203,6 +253,19 @@ impl BriefingGenerator {
             .replace('>', "&gt;")
             .replace('"', "&quot;")
             .replace('\'', "&#39;")
+    }
+
+    /// Format a quote for HTML: italic quote text, normal attribution
+    /// Input: `"quote text" -- Speaker Name`
+    /// Output: `<em>"quote text"</em> -- Speaker Name`
+    fn format_quote_html(quote: &str) -> String {
+        if let Some(sep_pos) = quote.find(" -- ") {
+            let quote_text = Self::escape_html(&quote[..sep_pos]);
+            let attribution = Self::escape_html(&quote[sep_pos..]);
+            format!("<em>{}</em>{}", quote_text, attribution)
+        } else {
+            format!("<em>{}</em>", Self::escape_html(quote))
+        }
     }
 
     pub fn generate_links_csv(topics: &[Topic]) -> String {
@@ -297,14 +360,40 @@ impl BriefingGenerator {
                 // Summary
                 org.push_str("*** Summary\n");
                 match &story.summary {
-                    Summary::Success { points, quote } => {
-                        // Add quote first if it exists (quote already includes quotes and attribution)
+                    Summary::Editorial {
+                        whats_happening,
+                        why_it_matters,
+                        big_picture,
+                        quote,
+                    } => {
                         if let Some(q) = quote {
                             org.push_str(&format!("{}\n\n", q));
                         }
-                        // Add bullet points
-                        for point in points {
-                            org.push_str(&format!("- {}\n", point));
+                        org.push_str(&format!("What's happening: {}\n", whats_happening));
+                        org.push_str(&format!("Why it matters: {}\n", why_it_matters));
+                        if !big_picture.is_empty() {
+                            org.push_str(&format!("The big picture: {}\n", big_picture));
+                        }
+                    }
+                    Summary::Product {
+                        the_product,
+                        cost,
+                        availability,
+                        platforms,
+                        quote,
+                    } => {
+                        if let Some(q) = quote {
+                            org.push_str(&format!("{}\n\n", q));
+                        }
+                        org.push_str(&format!("The product: {}\n", the_product));
+                        if !cost.is_empty() {
+                            org.push_str(&format!("Cost: {}\n", cost));
+                        }
+                        if !availability.is_empty() {
+                            org.push_str(&format!("Availability: {}\n", availability));
+                        }
+                        if !platforms.is_empty() {
+                            org.push_str(&format!("Platforms: {}\n", platforms));
                         }
                     }
                     Summary::Insufficient | Summary::Failed(_) => {
@@ -490,8 +579,10 @@ mod tests {
                 title: "Test Article".to_string(),
                 url: "https://example.com".to_string(),
                 created: "2026-02-01T00:00:00Z".to_string(),
-                summary: Summary::Success {
-                    points: vec!["Point 1".to_string()],
+                summary: Summary::Editorial {
+                    whats_happening: "New development announced".to_string(),
+                    why_it_matters: "It changes the industry".to_string(),
+                    big_picture: String::new(),
                     quote: None,
                 },
             }],
@@ -504,7 +595,7 @@ mod tests {
         assert!(html.contains("Tech News"));
         assert!(html.contains("Test Article"));
         assert!(html.contains("https://example.com"));
-        assert!(html.contains("Point 1"));
+        assert!(html.contains("New development announced"));
     }
 
     #[test]
@@ -517,8 +608,10 @@ mod tests {
                 title: "Test <script>".to_string(),
                 url: "https://example.com".to_string(),
                 created: "2026-02-01".to_string(),
-                summary: Summary::Success {
-                    points: vec!["Point \"quoted\"".to_string()],
+                summary: Summary::Editorial {
+                    whats_happening: "Point \"quoted\"".to_string(),
+                    why_it_matters: "It matters".to_string(),
+                    big_picture: String::new(),
                     quote: None,
                 },
             }],
@@ -576,9 +669,11 @@ mod tests {
                 title: "Story Title".to_string(),
                 url: "https://example.com".to_string(),
                 created: "2026-02-01".to_string(),
-                summary: Summary::Success {
-                    points: vec!["Point A".to_string(), "Point B".to_string()],
-                    quote: Some("\"A quote\" - Author".to_string()),
+                summary: Summary::Editorial {
+                    whats_happening: "New chip announced".to_string(),
+                    why_it_matters: "Better performance expected".to_string(),
+                    big_picture: "Industry shift to custom silicon".to_string(),
+                    quote: Some("\"A quote\" -- Author".to_string()),
                 },
             }],
         }];
@@ -591,9 +686,10 @@ mod tests {
         assert!(org.contains("** Story Title"));
         assert!(org.contains("*** URL\nhttps://example.com"));
         assert!(org.contains("*** Summary"));
-        assert!(org.contains("- Point A"));
-        assert!(org.contains("- Point B"));
-        assert!(org.contains("\"A quote\" - Author"));
+        assert!(org.contains("What's happening: New chip announced"));
+        assert!(org.contains("Why it matters: Better performance expected"));
+        assert!(org.contains("The big picture: Industry shift to custom silicon"));
+        assert!(org.contains("\"A quote\" -- Author"));
     }
 
     #[test]

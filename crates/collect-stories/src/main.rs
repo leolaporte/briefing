@@ -181,7 +181,7 @@ async fn main() -> Result<()> {
 
         let successful_summaries = summary_map
             .values()
-            .filter(|s| matches!(s, Summary::Success { .. }))
+            .filter(|s| matches!(s, Summary::Editorial { .. } | Summary::Product { .. }))
             .count();
 
         println!(
@@ -194,14 +194,14 @@ async fn main() -> Result<()> {
     // Helper to create fallback summary from Raindrop note or excerpt fields
     let fallback_summary = |bookmark: &shared::raindrop::Bookmark, reason: &str| -> Summary {
         // Try note first, then excerpt
-        for field in [&bookmark.note, &bookmark.excerpt] {
-            if let Some(text) = field {
-                if !text.trim().is_empty() {
-                    return Summary::Success {
-                        points: vec![text.clone()],
-                        quote: None,
-                    };
-                }
+        for text in [&bookmark.note, &bookmark.excerpt].into_iter().flatten() {
+            if !text.trim().is_empty() {
+                return Summary::Editorial {
+                    whats_happening: text.clone(),
+                    why_it_matters: String::new(),
+                    big_picture: String::new(),
+                    quote: None,
+                };
             }
         }
         Summary::Failed(reason.to_string())
@@ -256,7 +256,7 @@ async fn main() -> Result<()> {
         stories.len(),
         stories
             .iter()
-            .filter(|s| matches!(s.summary, Summary::Success { .. }))
+            .filter(|s| matches!(s.summary, Summary::Editorial { .. } | Summary::Product { .. }))
             .count(),
         stories
             .iter()
