@@ -250,9 +250,8 @@ fn parse_org_mode(content: &str) -> Result<(String, Vec<Topic>)> {
     let mut current_topic: Option<Topic> = None;
     let mut current_story: Option<Story> = None;
     let mut current_section: Option<String> = None;
-    let mut whats_happening: Option<String> = None;
-    let mut why_it_matters: Option<String> = None;
-    let mut big_picture: Option<String> = None;
+    let mut lede: Option<String> = None;
+    let mut nutgraf: Option<String> = None;
     let mut the_product: Option<String> = None;
     let mut cost: Option<String> = None;
     let mut availability: Option<String> = None;
@@ -321,9 +320,8 @@ fn parse_org_mode(content: &str) -> Result<(String, Vec<Topic>)> {
                 summary: Summary::Insufficient,
             });
             current_section = None;
-            whats_happening = None;
-            why_it_matters = None;
-            big_picture = None;
+            lede = None;
+            nutgraf = None;
             the_product = None;
             cost = None;
             availability = None;
@@ -355,12 +353,10 @@ fn parse_org_mode(content: &str) -> Result<(String, Vec<Topic>)> {
                     "Summary" => {
                         if trimmed.starts_with('"') {
                             quote = Some(trimmed.to_string());
-                        } else if let Some(val) = trimmed.strip_prefix("What's happening: ") {
-                            whats_happening = Some(val.to_string());
-                        } else if let Some(val) = trimmed.strip_prefix("Why it matters: ") {
-                            why_it_matters = Some(val.to_string());
-                        } else if let Some(val) = trimmed.strip_prefix("The big picture: ") {
-                            big_picture = Some(val.to_string());
+                        } else if let Some(val) = trimmed.strip_prefix("LEDE: ") {
+                            lede = Some(val.to_string());
+                        } else if let Some(val) = trimmed.strip_prefix("NUTGRAF: ") {
+                            nutgraf = Some(val.to_string());
                         } else if let Some(val) = trimmed.strip_prefix("The product: ") {
                             the_product = Some(val.to_string());
                         } else if let Some(val) = trimmed.strip_prefix("Cost: ") {
@@ -381,13 +377,10 @@ fn parse_org_mode(content: &str) -> Result<(String, Vec<Topic>)> {
                                     platforms: platforms.clone().unwrap_or_default(),
                                     quote: quote.clone(),
                                 };
-                            } else if let (Some(ref wh), Some(ref wm)) =
-                                (&whats_happening, &why_it_matters)
-                            {
+                            } else if let (Some(ref l), Some(ref n)) = (&lede, &nutgraf) {
                                 story.summary = Summary::Editorial {
-                                    whats_happening: wh.clone(),
-                                    why_it_matters: wm.clone(),
-                                    big_picture: big_picture.clone().unwrap_or_default(),
+                                    lede: l.clone(),
+                                    nutgraf: n.clone(),
                                     quote: quote.clone(),
                                 };
                             }
@@ -474,9 +467,9 @@ https://example.com/iphone17
 2026-02-01
 
 *** Summary
-What's happening: Apple announced the iPhone 17 with a new A19 chip.
-Why it matters: The new chip delivers 40% better performance.
-The big picture: Apple continues to push custom silicon across its lineup.
+LEDE: Apple announced the iPhone 17 with a new A19 chip.
+
+NUTGRAF: The new chip delivers 40% better performance, continuing Apple's push into custom silicon across its lineup. This matters for the broader industry as competitors scramble to match Apple's vertical integration strategy.
 "#;
 
         let (show_name, topics) = parse_org_mode(content).unwrap();
@@ -489,15 +482,13 @@ The big picture: Apple continues to push custom silicon across its lineup.
         assert_eq!(topics[0].stories[0].url, "https://example.com/iphone17");
 
         if let Summary::Editorial {
-            whats_happening,
-            why_it_matters,
-            big_picture,
+            lede,
+            nutgraf,
             ..
         } = &topics[0].stories[0].summary
         {
-            assert!(whats_happening.contains("iPhone 17"));
-            assert!(why_it_matters.contains("40%"));
-            assert!(big_picture.contains("custom silicon"));
+            assert!(lede.contains("iPhone 17"));
+            assert!(nutgraf.contains("custom silicon"));
         } else {
             panic!("Expected Summary::Editorial");
         }
@@ -517,8 +508,9 @@ https://test.com
 *** Summary
 "This is a quote" -- Author Name
 
-What's happening: Something happened.
-Why it matters: It matters because of reasons.
+LEDE: Something happened involving someone.
+
+NUTGRAF: It matters because of reasons that affect the broader landscape.
 "#;
 
         let (_, topics) = parse_org_mode(content).unwrap();
@@ -580,8 +572,9 @@ Platforms: iOS, Android, Web.
 https://apple.com
 
 *** Summary
-What's happening: Apple did something.
-Why it matters: It matters.
+LEDE: Apple did something.
+
+NUTGRAF: It matters for the industry.
 
 * Google
 
@@ -591,8 +584,9 @@ Why it matters: It matters.
 https://google.com
 
 *** Summary
-What's happening: Google did something.
-Why it matters: It also matters.
+LEDE: Google did something.
+
+NUTGRAF: It also matters for the industry.
 "#;
 
         let (_, topics) = parse_org_mode(content).unwrap();
@@ -614,8 +608,9 @@ Why it matters: It also matters.
 https://example.com
 
 *** Summary
-What's happening: Something happened.
-Why it matters: It matters.
+LEDE: Something happened.
+
+NUTGRAF: It matters for the industry.
 
 * Empty Topic
 
@@ -643,8 +638,9 @@ Why it matters: It matters.
 https://test.com
 
 *** Summary
-What's happening: Something happened.
-Why it matters: It matters.
+LEDE: Something happened.
+
+NUTGRAF: It matters for the industry.
 "#;
 
         let (show_name, _) = parse_org_mode(content).unwrap();
@@ -680,8 +676,9 @@ https://test.com
 Sat, 1 Feb 2026
 
 *** Summary
-What's happening: Something happened.
-Why it matters: It matters.
+LEDE: Something happened.
+
+NUTGRAF: It matters for the industry.
 "#;
 
         let (_, topics) = parse_org_mode(content).unwrap();

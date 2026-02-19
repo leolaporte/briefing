@@ -131,9 +131,7 @@ impl TopicClusterer {
             .enumerate()
             .map(|(idx, story)| {
                 let first_point = match &story.summary {
-                    Summary::Editorial {
-                        whats_happening, ..
-                    } => whats_happening.as_str(),
+                    Summary::Editorial { lede, .. } => lede.as_str(),
                     Summary::Product { the_product, .. } => the_product.as_str(),
                     _ => "",
                 };

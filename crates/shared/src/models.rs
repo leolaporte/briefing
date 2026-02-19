@@ -88,9 +88,8 @@ mod tests {
             url: "https://example.com".to_string(),
             created: "2026-02-01".to_string(),
             summary: Summary::Editorial {
-                whats_happening: "New development announced".to_string(),
-                why_it_matters: "It changes the industry".to_string(),
-                big_picture: String::new(),
+                lede: "Acme Corp announced a new widget".to_string(),
+                nutgraf: "It changes the industry".to_string(),
                 quote: None,
             },
         };
@@ -103,7 +102,7 @@ mod tests {
         let json = serde_json::to_string(&data).unwrap();
         assert!(json.contains("Test Article"));
         assert!(json.contains("https://example.com"));
-        assert!(json.contains("New development announced"));
+        assert!(json.contains("Acme Corp announced a new widget"));
     }
 
     #[test]
@@ -119,7 +118,7 @@ mod tests {
                         "title": "Test",
                         "url": "https://test.com",
                         "created": "2026-02-01",
-                        "summary": {"Editorial": {"whats_happening": "A happened", "why_it_matters": "Because B", "big_picture": "", "quote": null}}
+                        "summary": {"Editorial": {"lede": "A happened", "nutgraf": "Because B", "quote": null}}
                     }]
                 }
             ]

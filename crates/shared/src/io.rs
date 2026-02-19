@@ -116,9 +116,8 @@ mod tests {
             url: "https://example.com".to_string(),
             created: "2026-02-01".to_string(),
             summary: Summary::Editorial {
-                whats_happening: "New development announced".to_string(),
-                why_it_matters: "It changes the industry".to_string(),
-                big_picture: String::new(),
+                lede: "Acme Corp announced a new widget".to_string(),
+                nutgraf: "It changes the industry".to_string(),
                 quote: None,
             },
         };

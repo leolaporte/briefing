@@ -159,9 +159,8 @@ impl BriefingGenerator {
 
                 match &story.summary {
                     Summary::Editorial {
-                        whats_happening,
-                        why_it_matters,
-                        big_picture,
+                        lede,
+                        nutgraf,
                         quote,
                     } => {
                         html.push_str("    <details class=\"article\" open>\n");
@@ -173,19 +172,13 @@ impl BriefingGenerator {
                             ));
                         }
                         html.push_str(&format!(
-                            "      <p><strong>What's happening:</strong> {}</p>\n",
-                            Self::escape_html(whats_happening)
+                            "      <p><strong>{}</strong></p>\n",
+                            Self::escape_html(lede)
                         ));
                         html.push_str(&format!(
-                            "      <p><strong>Why it matters:</strong> {}</p>\n",
-                            Self::escape_html(why_it_matters)
+                            "      <p>{}</p>\n",
+                            Self::escape_html(nutgraf)
                         ));
-                        if !big_picture.is_empty() {
-                            html.push_str(&format!(
-                                "      <p><strong>The big picture:</strong> {}</p>\n",
-                                Self::escape_html(big_picture)
-                            ));
-                        }
                         html.push_str("    </details>\n");
                     }
                     Summary::Product {
@@ -361,19 +354,15 @@ impl BriefingGenerator {
                 org.push_str("*** Summary\n");
                 match &story.summary {
                     Summary::Editorial {
-                        whats_happening,
-                        why_it_matters,
-                        big_picture,
+                        lede,
+                        nutgraf,
                         quote,
                     } => {
                         if let Some(q) = quote {
                             org.push_str(&format!("{}\n\n", q));
                         }
-                        org.push_str(&format!("What's happening: {}\n", whats_happening));
-                        org.push_str(&format!("Why it matters: {}\n", why_it_matters));
-                        if !big_picture.is_empty() {
-                            org.push_str(&format!("The big picture: {}\n", big_picture));
-                        }
+                        org.push_str(&format!("LEDE: {}\n\n", lede));
+                        org.push_str(&format!("NUTGRAF: {}\n", nutgraf));
                     }
                     Summary::Product {
                         the_product,
@@ -580,9 +569,8 @@ mod tests {
                 url: "https://example.com".to_string(),
                 created: "2026-02-01T00:00:00Z".to_string(),
                 summary: Summary::Editorial {
-                    whats_happening: "New development announced".to_string(),
-                    why_it_matters: "It changes the industry".to_string(),
-                    big_picture: String::new(),
+                    lede: "Acme Corp announced a new widget".to_string(),
+                    nutgraf: "The announcement matters because it changes the industry".to_string(),
                     quote: None,
                 },
             }],
@@ -595,7 +583,7 @@ mod tests {
         assert!(html.contains("Tech News"));
         assert!(html.contains("Test Article"));
         assert!(html.contains("https://example.com"));
-        assert!(html.contains("New development announced"));
+        assert!(html.contains("Acme Corp announced a new widget"));
     }
 
     #[test]
@@ -609,9 +597,8 @@ mod tests {
                 url: "https://example.com".to_string(),
                 created: "2026-02-01".to_string(),
                 summary: Summary::Editorial {
-                    whats_happening: "Point \"quoted\"".to_string(),
-                    why_it_matters: "It matters".to_string(),
-                    big_picture: String::new(),
+                    lede: "Point \"quoted\"".to_string(),
+                    nutgraf: "It matters".to_string(),
                     quote: None,
                 },
             }],
@@ -670,9 +657,8 @@ mod tests {
                 url: "https://example.com".to_string(),
                 created: "2026-02-01".to_string(),
                 summary: Summary::Editorial {
-                    whats_happening: "New chip announced".to_string(),
-                    why_it_matters: "Better performance expected".to_string(),
-                    big_picture: "Industry shift to custom silicon".to_string(),
+                    lede: "Apple unveiled a new M5 chip at its spring event".to_string(),
+                    nutgraf: "The announcement signals Apple's continued investment in custom silicon, which has reshaped the laptop and desktop market since the M1 transition in 2020.".to_string(),
                     quote: Some("\"A quote\" -- Author".to_string()),
                 },
             }],
@@ -686,10 +672,11 @@ mod tests {
         assert!(org.contains("** Story Title"));
         assert!(org.contains("*** URL\nhttps://example.com"));
         assert!(org.contains("*** Summary"));
-        assert!(org.contains("What's happening: New chip announced"));
-        assert!(org.contains("Why it matters: Better performance expected"));
-        assert!(org.contains("The big picture: Industry shift to custom silicon"));
+        assert!(org.contains("LEDE: Apple unveiled a new M5 chip"));
+        assert!(org.contains("NUTGRAF: The announcement signals"));
         assert!(org.contains("\"A quote\" -- Author"));
+        // Verify blank line between LEDE and NUTGRAF
+        assert!(org.contains("LEDE: Apple unveiled a new M5 chip at its spring event\n\nNUTGRAF:"));
     }
 
     #[test]

@@ -197,9 +197,8 @@ async fn main() -> Result<()> {
         for text in [&bookmark.note, &bookmark.excerpt].into_iter().flatten() {
             if !text.trim().is_empty() {
                 return Summary::Editorial {
-                    whats_happening: text.clone(),
-                    why_it_matters: String::new(),
-                    big_picture: String::new(),
+                    lede: text.clone(),
+                    nutgraf: String::new(),
                     quote: None,
                 };
             }

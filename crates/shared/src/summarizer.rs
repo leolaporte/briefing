@@ -9,9 +9,8 @@ use tokio::sync::Semaphore;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Summary {
     Editorial {
-        whats_happening: String,
-        why_it_matters: String,
-        big_picture: String,
+        lede: String,
+        nutgraf: String,
         quote: Option<String>,
     },
     Product {
@@ -122,22 +121,20 @@ impl ClaudeSummarizer {
         };
 
         let prompt = format!(
-            r#"You are a journalist writing in Axios Smart Brevity style. Summarize the article below using the appropriate format.
+            r#"You are a journalist summarizing articles using the nut graph structure. Summarize the article below using the appropriate format.
 
 First, determine: Is this article primarily about a specific PRODUCT (hardware, software, app, device) or is it EDITORIAL (news, policy, analysis, industry event)?
 
 RULES:
 1. Use ONLY information from the article - no external knowledge
-2. Each section should be 1-2 concise sentences
-3. If the article has insufficient content, respond with: "Insufficient content for summary"
-4. If there are direct quotes with clear speaker attribution, include the most important one
+2. If the article has insufficient content, respond with: "Insufficient content for summary"
+3. QUOTE must be copied VERBATIM from the article — the exact words as they appear, with clear speaker attribution. Do not paraphrase or alter the quote in any way.
 
 If EDITORIAL, respond in this exact format:
 FORMAT: EDITORIAL
-WHATS_HAPPENING: One strong sentence capturing the core news or development.
-WHY_IT_MATTERS: 1-2 sentences explaining why this is significant.
-BIG_PICTURE: One sentence on broader industry or societal implications. Omit this line if the article is too narrow for broader context.
-QUOTE: "quote text" -- Speaker Name
+QUOTE: "exact verbatim quote from the article" -- Speaker Name
+LEDE: One strong sentence identifying WHO is involved and WHAT happened or was announced.
+NUTGRAF: A paragraph (2-4 sentences) explaining WHY this matters. Contextualize the most important facts and give the reader a clear understanding of the central issue or topic.
 
 If PRODUCT, respond in this exact format:
 FORMAT: PRODUCT
@@ -145,9 +142,9 @@ THE_PRODUCT: What the product is and what it does (1-2 sentences).
 COST: Pricing details. Omit this line if pricing is not mentioned.
 AVAILABILITY: When and where it is available. Omit this line if not mentioned.
 PLATFORMS: What platforms or operating systems it runs on. Omit this line for hardware-only products or if not mentioned.
-QUOTE: "quote text" -- Speaker Name
+QUOTE: "exact verbatim quote from the article" -- Speaker Name
 
-Omit the QUOTE line if there are no quotes or no clear speaker attribution in the article.
+Omit the QUOTE line if there are no direct quotes with clear speaker attribution in the article.
 
 Article:
 {}"#,
@@ -203,9 +200,8 @@ Article:
     fn parse_smart_brevity(&self, text: &str) -> Result<Summary> {
         let mut format_type = None;
         let mut quote = None;
-        let mut whats_happening = String::new();
-        let mut why_it_matters = String::new();
-        let mut big_picture = String::new();
+        let mut lede = String::new();
+        let mut nutgraf = String::new();
         let mut the_product = String::new();
         let mut cost = String::new();
         let mut availability = String::new();
@@ -219,12 +215,10 @@ Article:
 
             if let Some(fmt) = trimmed.strip_prefix("FORMAT:") {
                 format_type = Some(fmt.trim().to_uppercase());
-            } else if let Some(val) = trimmed.strip_prefix("WHATS_HAPPENING:") {
-                whats_happening = val.trim().to_string();
-            } else if let Some(val) = trimmed.strip_prefix("WHY_IT_MATTERS:") {
-                why_it_matters = val.trim().to_string();
-            } else if let Some(val) = trimmed.strip_prefix("BIG_PICTURE:") {
-                big_picture = val.trim().to_string();
+            } else if let Some(val) = trimmed.strip_prefix("LEDE:") {
+                lede = val.trim().to_string();
+            } else if let Some(val) = trimmed.strip_prefix("NUTGRAF:") {
+                nutgraf = val.trim().to_string();
             } else if let Some(val) = trimmed.strip_prefix("THE_PRODUCT:") {
                 the_product = val.trim().to_string();
             } else if let Some(val) = trimmed.strip_prefix("COST:") {
@@ -262,15 +256,14 @@ Article:
                 quote,
             })
         } else {
-            if whats_happening.is_empty() || why_it_matters.is_empty() {
+            if lede.is_empty() || nutgraf.is_empty() {
                 return Ok(Summary::Failed(
                     "Editorial format missing required fields".to_string(),
                 ));
             }
             Ok(Summary::Editorial {
-                whats_happening,
-                why_it_matters,
-                big_picture,
+                lede,
+                nutgraf,
                 quote,
             })
         }

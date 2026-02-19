@@ -300,4 +300,3 @@ tail -f /tmp/podcast-briefing.log
   - `https://myfiles.fastmail.com/Briefings/im/index.html`
 - Must use full binary paths (`$HOME/.local/bin/collect-stories`) since `~/.local/bin` is not in systemd's PATH
 - `Persistent=true` in timer ensures runs happen even after sleep/wake
-Use 'bd' for task tracking
