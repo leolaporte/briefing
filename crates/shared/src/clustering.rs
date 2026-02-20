@@ -176,7 +176,7 @@ Important: Every article index from 0 to {} must appear in exactly one topic."#,
         );
 
         let request = ClaudeRequest {
-            model: "claude-3-5-haiku-20241022".to_string(),
+            model: "claude-haiku-4-5-20251001".to_string(),
             max_tokens: 2048,
             messages: vec![Message {
                 role: "user".to_string(),
