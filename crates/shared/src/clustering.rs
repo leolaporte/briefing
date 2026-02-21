@@ -282,7 +282,13 @@ fn parse_date_for_sorting(date_str: &str) -> Option<DateTime<FixedOffset>> {
     if let Ok(dt) = DateTime::parse_from_rfc3339(date_str) {
         return Some(dt);
     }
-    for fmt in &["%a, %e %b %Y", "%a, %d %b %Y", "%e %b %Y", "%d %b %Y", "%Y-%m-%d"] {
+    for fmt in &[
+        "%a, %e %b %Y",
+        "%a, %d %b %Y",
+        "%e %b %Y",
+        "%d %b %Y",
+        "%Y-%m-%d",
+    ] {
         if let Ok(nd) = NaiveDate::parse_from_str(date_str.trim(), fmt) {
             return nd
                 .and_hms_opt(0, 0, 0)

@@ -58,9 +58,8 @@ Converts manually-edited org-mode documents to HTML and CSV formats ready for up
 
 ```bash
 cd ~/Projects/briefing
-cargo build --release --workspace
-cp target/release/collect-stories ~/.local/bin/
-cp target/release/prepare-briefing ~/.local/bin/
+cargo install --path crates/collect-stories --root ~/.local
+cargo install --path crates/prepare-briefing --root ~/.local
 ```
 
 ### Configure API Keys
@@ -613,8 +612,8 @@ cargo build --release -p collect-stories
 cargo build --release -p prepare-briefing
 
 # Install to ~/.local/bin/
-cp target/release/collect-stories ~/.local/bin/
-cp target/release/prepare-briefing ~/.local/bin/
+cargo install --path crates/collect-stories --root ~/.local
+cargo install --path crates/prepare-briefing --root ~/.local
 ```
 
 ### Run in Development

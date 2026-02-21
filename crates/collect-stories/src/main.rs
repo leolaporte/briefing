@@ -1,9 +1,9 @@
 use anyhow::{Context, Result};
-use chrono::{Datelike, Duration, Local, TimeZone, Timelike, Utc};
+use chrono::{Duration, Utc};
 use clap::Parser;
 use shared::{
-    ArticleContent, ClaudeSummarizer, Config, ContentExtractor, ExtractionResult, RaindropClient,
-    ShowInfo, Story, Summary, TopicClusterer,
+    local_wallclock_as_utc, ArticleContent, ClaudeSummarizer, Config, ContentExtractor,
+    ExtractionResult, RaindropClient, ShowInfo, Story, Summary, TopicClusterer,
 };
 use std::collections::HashMap;
 use std::fs::OpenOptions;
@@ -96,17 +96,7 @@ async fn main() -> Result<()> {
 
     // Use local time for show date calculation (Pacific time zone)
     // Get the local date/time and convert it to UTC with same date/time values (not same instant)
-    let local_now = Local::now();
-    let local_as_utc = Utc
-        .with_ymd_and_hms(
-            local_now.year(),
-            local_now.month(),
-            local_now.day(),
-            local_now.hour(),
-            local_now.minute(),
-            local_now.second(),
-        )
-        .unwrap();
+    let local_as_utc = local_wallclock_as_utc().context("Failed to determine local timestamp")?;
 
     println!("\n📚 Fetching bookmarks from Raindrop.io...");
     let raindrop_client = RaindropClient::new(config.raindrop_api_token)?;
@@ -255,7 +245,10 @@ async fn main() -> Result<()> {
         stories.len(),
         stories
             .iter()
-            .filter(|s| matches!(s.summary, Summary::Editorial { .. } | Summary::Product { .. }))
+            .filter(|s| matches!(
+                s.summary,
+                Summary::Editorial { .. } | Summary::Product { .. }
+            ))
             .count(),
         stories
             .iter()

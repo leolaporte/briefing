@@ -175,10 +175,7 @@ impl BriefingGenerator {
                             "      <p><strong>{}</strong></p>\n",
                             Self::escape_html(lede)
                         ));
-                        html.push_str(&format!(
-                            "      <p>{}</p>\n",
-                            Self::escape_html(nutgraf)
-                        ));
+                        html.push_str(&format!("      <p>{}</p>\n", Self::escape_html(nutgraf)));
                         html.push_str("    </details>\n");
                     }
                     Summary::Product {
@@ -497,10 +494,7 @@ mod tests {
 
     #[test]
     fn test_escape_html_single_quotes() {
-        assert_eq!(
-            BriefingGenerator::escape_html("It's here"),
-            "It&#39;s here"
-        );
+        assert_eq!(BriefingGenerator::escape_html("It's here"), "It&#39;s here");
     }
 
     #[test]

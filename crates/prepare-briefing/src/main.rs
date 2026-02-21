@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
-use chrono::{Datelike, Local, TimeZone, Timelike, Utc};
+use chrono::Utc;
 use clap::Parser;
-use shared::{Story, Summary, Topic};
+use shared::{local_wallclock_as_utc, Story, Summary, Topic};
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
@@ -48,17 +48,7 @@ async fn main() -> Result<()> {
     );
 
     // Use local time for show date calculation (same as collect-stories)
-    let local_now = Local::now();
-    let local_as_utc = Utc
-        .with_ymd_and_hms(
-            local_now.year(),
-            local_now.month(),
-            local_now.day(),
-            local_now.hour(),
-            local_now.minute(),
-            local_now.second(),
-        )
-        .unwrap();
+    let local_as_utc = local_wallclock_as_utc().context("Failed to determine local timestamp")?;
     let show_slug = extract_show_slug(&org_file)?;
 
     // Calculate the show date for the filename (e.g., next Tuesday for MBW)
@@ -98,31 +88,27 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn upload_to_fastmail(
-    show_slug: &str,
-    html_path: &Path,
-    csv_path: &Path,
-) -> Result<()> {
+async fn upload_to_fastmail(show_slug: &str, html_path: &Path, csv_path: &Path) -> Result<()> {
     // Load credentials from .env file
     let env_path = dirs::home_dir()
         .ok_or_else(|| anyhow::anyhow!("Could not find home directory"))?
         .join(".config/podcast-briefing/.env");
 
-    dotenvy::from_path(&env_path)
-        .context(format!("Failed to load credentials from {}", env_path.display()))?;
+    dotenvy::from_path(&env_path).context(format!(
+        "Failed to load credentials from {}",
+        env_path.display()
+    ))?;
 
-    let fastmail_user = std::env::var("FASTMAIL_USER")
-        .context("FASTMAIL_USER not set in .env")?;
-    let fastmail_password = std::env::var("FASTMAIL_PASSWORD")
-        .context("FASTMAIL_PASSWORD not set in .env")?;
+    let fastmail_user = std::env::var("FASTMAIL_USER").context("FASTMAIL_USER not set in .env")?;
+    let fastmail_password =
+        std::env::var("FASTMAIL_PASSWORD").context("FASTMAIL_PASSWORD not set in .env")?;
 
     let base_url = "https://myfiles.fastmail.com/Briefings";
     let client = reqwest::Client::new();
 
     // Upload HTML as index.html
     let html_url = format!("{}/{}/index.html", base_url, show_slug);
-    let html_content = fs::read(html_path)
-        .context("Failed to read HTML file for upload")?;
+    let html_content = fs::read(html_path).context("Failed to read HTML file for upload")?;
 
     let response = client
         .put(&html_url)
@@ -139,8 +125,7 @@ async fn upload_to_fastmail(
 
     // Upload CSV as links.csv
     let csv_url = format!("{}/{}/links.csv", base_url, show_slug);
-    let csv_content = fs::read(csv_path)
-        .context("Failed to read CSV file for upload")?;
+    let csv_content = fs::read(csv_path).context("Failed to read CSV file for upload")?;
 
     let response = client
         .put(&csv_url)
@@ -188,7 +173,10 @@ fn select_org_file() -> Result<PathBuf> {
 
     println!("Available org files:\n");
     for (i, file) in org_files.iter().enumerate() {
-        let filename = file.file_name().unwrap().to_string_lossy();
+        let filename = file
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("<invalid filename>");
         let modified = fs::metadata(file)
             .and_then(|m| m.modified())
             .ok()
@@ -481,12 +469,7 @@ NUTGRAF: The new chip delivers 40% better performance, continuing Apple's push i
         assert_eq!(topics[0].stories[0].title, "iPhone 17 Announced");
         assert_eq!(topics[0].stories[0].url, "https://example.com/iphone17");
 
-        if let Summary::Editorial {
-            lede,
-            nutgraf,
-            ..
-        } = &topics[0].stories[0].summary
-        {
+        if let Summary::Editorial { lede, nutgraf, .. } = &topics[0].stories[0].summary {
             assert!(lede.contains("iPhone 17"));
             assert!(nutgraf.contains("custom silicon"));
         } else {

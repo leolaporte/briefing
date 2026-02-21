@@ -224,7 +224,11 @@ mod tests {
         let result = test_format_date("2026-02-01T15:30:00Z");
         assert!(result.is_some());
         let formatted = result.unwrap();
-        assert!(formatted.contains("2026-02-01"), "Expected RFC 3339 format, got: {}", formatted);
+        assert!(
+            formatted.contains("2026-02-01"),
+            "Expected RFC 3339 format, got: {}",
+            formatted
+        );
     }
 
     #[test]
@@ -316,7 +320,10 @@ mod tests {
         };
 
         assert_eq!(content.text, "Article text");
-        assert_eq!(content.published_date, Some("2026-02-01T00:00:00+00:00".to_string()));
+        assert_eq!(
+            content.published_date,
+            Some("2026-02-01T00:00:00+00:00".to_string())
+        );
     }
 
     #[test]
