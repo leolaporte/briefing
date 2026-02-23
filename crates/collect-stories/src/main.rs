@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Datelike, Duration, Timelike, Utc, Weekday};
 use clap::Parser;
 use shared::{
     local_wallclock_as_utc, ArticleContent, ClaudeSummarizer, Config, ContentExtractor,
@@ -32,6 +32,33 @@ impl Show {
             "im" => Some(Show::IntelligentMachines),
             _ => None,
         }
+    }
+
+    /// Calculate when the most recent past episode started.
+    /// Takes local wall-clock time as UTC (from `local_wallclock_as_utc`).
+    fn previous_show_start(&self, local_now: DateTime<Utc>) -> DateTime<Utc> {
+        let (target_weekday, start_hour) = match self {
+            Show::TWiT => (Weekday::Sun, 13),               // Sunday 1pm Pacific
+            Show::MacBreakWeekly => (Weekday::Tue, 10),      // Tuesday 10am Pacific
+            Show::IntelligentMachines => (Weekday::Wed, 13), // Wednesday 1pm Pacific
+        };
+
+        let current_day = local_now.weekday().num_days_from_monday();
+        let target_day = target_weekday.num_days_from_monday();
+
+        let days_back = if current_day == target_day {
+            if local_now.hour() >= start_hour {
+                0 // Show started today
+            } else {
+                7 // Before show start, go back to previous week
+            }
+        } else if current_day > target_day {
+            current_day - target_day
+        } else {
+            7 - (target_day - current_day)
+        };
+
+        local_now - Duration::days(days_back as i64)
     }
 }
 
@@ -69,10 +96,6 @@ struct Args {
     /// Show to collect stories for (twit, mbw, im)
     #[arg(short, long)]
     show: Option<String>,
-
-    /// Number of days to look back for bookmarks
-    #[arg(short, long, default_value = "7")]
-    days: i64,
 }
 
 #[tokio::main]
@@ -91,12 +114,19 @@ async fn main() -> Result<()> {
     let show_info = show.info();
     println!("\n✓ Selected: {}", show_info.name);
 
-    let now = Utc::now();
-    let since = now - Duration::days(args.days);
-
     // Use local time for show date calculation (Pacific time zone)
-    // Get the local date/time and convert it to UTC with same date/time values (not same instant)
     let local_as_utc = local_wallclock_as_utc().context("Failed to determine local timestamp")?;
+
+    // Automatically determine lookback window based on show schedule
+    let previous_start = show.previous_show_start(local_as_utc);
+    // Subtract 1 day so Raindrop's "created:>" includes the show date
+    let since = previous_start - Duration::days(1);
+
+    println!(
+        "  Collecting stories since previous {} ({})",
+        show_info.name,
+        previous_start.format("%A, %-d %B")
+    );
 
     println!("\n📚 Fetching bookmarks from Raindrop.io...");
     let raindrop_client = RaindropClient::new(config.raindrop_api_token)?;
@@ -107,8 +137,9 @@ async fn main() -> Result<()> {
 
     if bookmarks.is_empty() {
         println!(
-            "No bookmarks found with tag {} in the past {} days.",
-            show_info.tag, args.days
+            "No bookmarks found with tag {} since {}.",
+            show_info.tag,
+            previous_start.format("%A, %-d %B %Y")
         );
         return Ok(());
     }
