@@ -353,6 +353,12 @@ fn parse_org_mode(content: &str) -> Result<(String, Vec<Topic>)> {
                             availability = Some(val.to_string());
                         } else if let Some(val) = trimmed.strip_prefix("Platforms: ") {
                             platforms = Some(val.to_string());
+                        } else if the_product.is_none() && lede.is_none() {
+                            // Positional fallback: first unlabeled paragraph = lede
+                            lede = Some(trimmed.to_string());
+                        } else if the_product.is_none() && nutgraf.is_none() {
+                            // Positional fallback: second unlabeled paragraph = nutgraf
+                            nutgraf = Some(trimmed.to_string());
                         }
 
                         // Build summary from accumulated fields
@@ -455,9 +461,9 @@ https://example.com/iphone17
 2026-02-01
 
 *** Summary
-LEDE: Apple announced the iPhone 17 with a new A19 chip.
+Apple announced the iPhone 17 with a new A19 chip.
 
-NUTGRAF: The new chip delivers 40% better performance, continuing Apple's push into custom silicon across its lineup. This matters for the broader industry as competitors scramble to match Apple's vertical integration strategy.
+The new chip delivers 40% better performance, continuing Apple's push into custom silicon across its lineup. This matters for the broader industry as competitors scramble to match Apple's vertical integration strategy.
 "#;
 
         let (show_name, topics) = parse_org_mode(content).unwrap();
@@ -491,9 +497,9 @@ https://test.com
 *** Summary
 "This is a quote" -- Author Name
 
-LEDE: Something happened involving someone.
+Something happened involving someone.
 
-NUTGRAF: It matters because of reasons that affect the broader landscape.
+It matters because of reasons that affect the broader landscape.
 "#;
 
         let (_, topics) = parse_org_mode(content).unwrap();
@@ -555,9 +561,9 @@ Platforms: iOS, Android, Web.
 https://apple.com
 
 *** Summary
-LEDE: Apple did something.
+Apple did something.
 
-NUTGRAF: It matters for the industry.
+It matters for the industry.
 
 * Google
 
@@ -567,9 +573,9 @@ NUTGRAF: It matters for the industry.
 https://google.com
 
 *** Summary
-LEDE: Google did something.
+Google did something.
 
-NUTGRAF: It also matters for the industry.
+It also matters for the industry.
 "#;
 
         let (_, topics) = parse_org_mode(content).unwrap();
@@ -591,9 +597,9 @@ NUTGRAF: It also matters for the industry.
 https://example.com
 
 *** Summary
-LEDE: Something happened.
+Something happened.
 
-NUTGRAF: It matters for the industry.
+It matters for the industry.
 
 * Empty Topic
 
@@ -621,9 +627,9 @@ NUTGRAF: It matters for the industry.
 https://test.com
 
 *** Summary
-LEDE: Something happened.
+Something happened.
 
-NUTGRAF: It matters for the industry.
+It matters for the industry.
 "#;
 
         let (show_name, _) = parse_org_mode(content).unwrap();
@@ -659,9 +665,9 @@ https://test.com
 Sat, 1 Feb 2026
 
 *** Summary
-LEDE: Something happened.
+Something happened.
 
-NUTGRAF: It matters for the industry.
+It matters for the industry.
 "#;
 
         let (_, topics) = parse_org_mode(content).unwrap();

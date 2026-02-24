@@ -358,8 +358,8 @@ impl BriefingGenerator {
                         if let Some(q) = quote {
                             org.push_str(&format!("{}\n\n", q));
                         }
-                        org.push_str(&format!("LEDE: {}\n\n", lede));
-                        org.push_str(&format!("NUTGRAF: {}\n", nutgraf));
+                        org.push_str(&format!("{}\n\n", lede));
+                        org.push_str(&format!("{}\n", nutgraf));
                     }
                     Summary::Product {
                         the_product,
@@ -666,11 +666,14 @@ mod tests {
         assert!(org.contains("** Story Title"));
         assert!(org.contains("*** URL\nhttps://example.com"));
         assert!(org.contains("*** Summary"));
-        assert!(org.contains("LEDE: Apple unveiled a new M5 chip"));
-        assert!(org.contains("NUTGRAF: The announcement signals"));
+        assert!(org.contains("Apple unveiled a new M5 chip"));
+        assert!(org.contains("The announcement signals"));
         assert!(org.contains("\"A quote\" -- Author"));
-        // Verify blank line between LEDE and NUTGRAF
-        assert!(org.contains("LEDE: Apple unveiled a new M5 chip at its spring event\n\nNUTGRAF:"));
+        // Verify no LEDE/NUTGRAF labels
+        assert!(!org.contains("LEDE:"));
+        assert!(!org.contains("NUTGRAF:"));
+        // Verify blank line between lede and nutgraf
+        assert!(org.contains("Apple unveiled a new M5 chip at its spring event\n\nThe announcement signals"));
     }
 
     #[test]
