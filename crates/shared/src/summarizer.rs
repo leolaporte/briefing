@@ -3,8 +3,13 @@ use futures::stream::{self, StreamExt};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
+
+fn is_auth_error(msg: &str) -> bool {
+    msg.contains("authentication_error") || msg.contains("invalid x-api-key")
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Summary {
@@ -28,7 +33,22 @@ pub enum Summary {
 struct ClaudeRequest {
     model: String,
     max_tokens: u32,
+    system: Vec<SystemBlock>,
     messages: Vec<Message>,
+}
+
+#[derive(Serialize)]
+struct SystemBlock {
+    #[serde(rename = "type")]
+    block_type: String,
+    text: String,
+    cache_control: CacheControl,
+}
+
+#[derive(Serialize)]
+struct CacheControl {
+    #[serde(rename = "type")]
+    control_type: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -46,6 +66,31 @@ struct ClaudeResponse {
 struct Content {
     text: String,
 }
+
+const SUMMARIZER_SYSTEM_PROMPT: &str = r#"You are a journalist summarizing articles using the nut graph structure. Summarize the article below using the appropriate format.
+
+First, determine: Is this article primarily about a specific PRODUCT (hardware, software, app, device) or is it EDITORIAL (news, policy, analysis, industry event)?
+
+RULES:
+1. Use ONLY information from the article - no external knowledge
+2. If the article has insufficient content, respond with: "Insufficient content for summary"
+3. QUOTE must be copied VERBATIM from the article — the exact words as they appear, with clear speaker attribution. Do not paraphrase or alter the quote in any way.
+
+If EDITORIAL, respond in this exact format:
+FORMAT: EDITORIAL
+QUOTE: "exact verbatim quote from the article" -- Speaker Name
+LEDE: One strong sentence identifying WHO is involved and WHAT happened or was announced.
+NUTGRAF: A paragraph (2-4 sentences) explaining WHY this matters. Contextualize the most important facts and give the reader a clear understanding of the central issue or topic.
+
+If PRODUCT, respond in this exact format:
+FORMAT: PRODUCT
+THE_PRODUCT: What the product is and what it does (1-2 sentences).
+COST: Pricing details. Omit this line if pricing is not mentioned.
+AVAILABILITY: When and where it is available. Omit this line if not mentioned.
+PLATFORMS: What platforms or operating systems it runs on. Omit this line for hardware-only products or if not mentioned.
+QUOTE: "exact verbatim quote from the article" -- Speaker Name
+
+Omit the QUOTE line if there are no direct quotes with clear speaker attribution in the article."#;
 
 pub struct ClaudeSummarizer {
     client: Client,
@@ -82,6 +127,12 @@ impl ClaudeSummarizer {
                 }
                 Err(e) => {
                     let error_msg = e.to_string();
+
+                    // Auth errors are fatal — don't retry, propagate immediately
+                    if is_auth_error(&error_msg) {
+                        anyhow::bail!("Authentication failed: {}", error_msg);
+                    }
+
                     let is_rate_limit = error_msg.contains("rate_limit");
 
                     if attempt == 4 {
@@ -120,43 +171,19 @@ impl ClaudeSummarizer {
             content
         };
 
-        let prompt = format!(
-            r#"You are a journalist summarizing articles using the nut graph structure. Summarize the article below using the appropriate format.
-
-First, determine: Is this article primarily about a specific PRODUCT (hardware, software, app, device) or is it EDITORIAL (news, policy, analysis, industry event)?
-
-RULES:
-1. Use ONLY information from the article - no external knowledge
-2. If the article has insufficient content, respond with: "Insufficient content for summary"
-3. QUOTE must be copied VERBATIM from the article — the exact words as they appear, with clear speaker attribution. Do not paraphrase or alter the quote in any way.
-
-If EDITORIAL, respond in this exact format:
-FORMAT: EDITORIAL
-QUOTE: "exact verbatim quote from the article" -- Speaker Name
-LEDE: One strong sentence identifying WHO is involved and WHAT happened or was announced.
-NUTGRAF: A paragraph (2-4 sentences) explaining WHY this matters. Contextualize the most important facts and give the reader a clear understanding of the central issue or topic.
-
-If PRODUCT, respond in this exact format:
-FORMAT: PRODUCT
-THE_PRODUCT: What the product is and what it does (1-2 sentences).
-COST: Pricing details. Omit this line if pricing is not mentioned.
-AVAILABILITY: When and where it is available. Omit this line if not mentioned.
-PLATFORMS: What platforms or operating systems it runs on. Omit this line for hardware-only products or if not mentioned.
-QUOTE: "exact verbatim quote from the article" -- Speaker Name
-
-Omit the QUOTE line if there are no direct quotes with clear speaker attribution in the article.
-
-Article:
-{}"#,
-            truncated_content
-        );
-
         let request = ClaudeRequest {
             model: "claude-haiku-4-5-20251001".to_string(),
             max_tokens: 768,
+            system: vec![SystemBlock {
+                block_type: "text".to_string(),
+                text: SUMMARIZER_SYSTEM_PROMPT.to_string(),
+                cache_control: CacheControl {
+                    control_type: "ephemeral".to_string(),
+                },
+            }],
             messages: vec![Message {
                 role: "user".to_string(),
-                content: prompt,
+                content: format!("Article:\n{}", truncated_content),
             }],
         };
 
@@ -272,25 +299,42 @@ Article:
     pub async fn summarize_articles_parallel(
         &self,
         articles: Vec<(String, String)>,
-    ) -> Vec<(String, Summary)> {
+    ) -> Result<Vec<(String, Summary)>> {
+        let auth_failed = Arc::new(AtomicBool::new(false));
+
         let results: Vec<(String, Summary)> = stream::iter(articles)
             .map(|(url, content)| {
                 let url_clone = url.clone();
+                let auth_failed = auth_failed.clone();
                 async move {
-                    let summary = self
-                        .summarize_article(&content)
-                        .await
-                        .unwrap_or_else(|e| Summary::Failed(e.to_string()));
-                    // Print progress dot
+                    if auth_failed.load(Ordering::Relaxed) {
+                        return (url_clone, Summary::Failed("Skipped — authentication failed".to_string()));
+                    }
+
+                    let summary = match self.summarize_article(&content).await {
+                        Ok(summary) => summary,
+                        Err(e) => {
+                            let msg = e.to_string();
+                            if is_auth_error(&msg) {
+                                auth_failed.store(true, Ordering::Relaxed);
+                            }
+                            Summary::Failed(msg)
+                        }
+                    };
                     eprint!(".");
                     let _ = std::io::stderr().flush();
                     (url_clone, summary)
                 }
             })
-            .buffer_unordered(2) // Reduced to 2 to avoid rate limits
+            .buffer_unordered(2)
             .collect()
             .await;
-        eprintln!(); // Newline after dots
-        results
+        eprintln!();
+
+        if auth_failed.load(Ordering::Relaxed) {
+            anyhow::bail!("API authentication failed — check your ANTHROPIC_API_KEY");
+        }
+
+        Ok(results)
     }
 }

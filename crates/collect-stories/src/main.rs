@@ -8,6 +8,30 @@ use shared::{
 use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::io::{self as stdio, Write};
+use std::path::PathBuf;
+
+fn cache_path() -> PathBuf {
+    let dir = dirs::cache_dir()
+        .unwrap_or_else(|| PathBuf::from("/tmp"))
+        .join("podcast-briefing");
+    std::fs::create_dir_all(&dir).ok();
+    dir.join("summaries.json")
+}
+
+fn load_summary_cache() -> HashMap<String, Summary> {
+    let path = cache_path();
+    match std::fs::read_to_string(&path) {
+        Ok(data) => serde_json::from_str(&data).unwrap_or_default(),
+        Err(_) => HashMap::new(),
+    }
+}
+
+fn save_summary_cache(cache: &HashMap<String, Summary>) {
+    let path = cache_path();
+    if let Ok(data) = serde_json::to_string(cache) {
+        std::fs::write(&path, data).ok();
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 enum Show {
@@ -185,20 +209,48 @@ async fn main() -> Result<()> {
     let mut summary_map: HashMap<String, Summary> = HashMap::new();
 
     if !content_map.is_empty() {
-        println!("\n🤖 Summarizing articles with Claude AI...");
-        println!("  (This may take a minute...)");
-        let summarizer = ClaudeSummarizer::new(config.anthropic_api_key.clone())?;
+        // Load cached summaries to avoid re-summarizing
+        let mut cache = load_summary_cache();
+        let mut cached_count = 0;
 
         let articles_for_summary: Vec<(String, String)> = content_map
             .iter()
-            .map(|(url, content)| (url.clone(), content.text.clone()))
+            .filter_map(|(url, content)| {
+                if let Some(summary) = cache.get(url) {
+                    // Only reuse successful summaries from cache
+                    if matches!(summary, Summary::Editorial { .. } | Summary::Product { .. }) {
+                        summary_map.insert(url.clone(), summary.clone());
+                        cached_count += 1;
+                        return None;
+                    }
+                }
+                Some((url.clone(), content.text.clone()))
+            })
             .collect();
 
-        let summary_results = summarizer
-            .summarize_articles_parallel(articles_for_summary)
-            .await;
+        let new_count = articles_for_summary.len();
+        println!(
+            "\n🤖 Summarizing articles with Claude AI... ({} cached, {} new)",
+            cached_count, new_count
+        );
 
-        summary_map = summary_results.into_iter().collect();
+        if !articles_for_summary.is_empty() {
+            let summarizer = ClaudeSummarizer::new(config.anthropic_api_key.clone())?;
+
+            let summary_results = summarizer
+                .summarize_articles_parallel(articles_for_summary)
+                .await?;
+
+            for (url, summary) in summary_results {
+                // Cache successful summaries for future runs
+                if matches!(summary, Summary::Editorial { .. } | Summary::Product { .. }) {
+                    cache.insert(url.clone(), summary.clone());
+                }
+                summary_map.insert(url, summary);
+            }
+
+            save_summary_cache(&cache);
+        }
 
         let successful_summaries = summary_map
             .values()

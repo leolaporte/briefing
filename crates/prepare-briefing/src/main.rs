@@ -89,19 +89,10 @@ async fn main() -> Result<()> {
 }
 
 async fn upload_to_fastmail(show_slug: &str, html_path: &Path, csv_path: &Path) -> Result<()> {
-    // Load credentials from .env file
-    let env_path = dirs::home_dir()
-        .ok_or_else(|| anyhow::anyhow!("Could not find home directory"))?
-        .join(".config/podcast-briefing/.env");
-
-    dotenvy::from_path(&env_path).context(format!(
-        "Failed to load credentials from {}",
-        env_path.display()
-    ))?;
-
-    let fastmail_user = std::env::var("FASTMAIL_USER").context("FASTMAIL_USER not set in .env")?;
+    let fastmail_user =
+        std::env::var("FASTMAIL_USER").context("FASTMAIL_USER not set in environment")?;
     let fastmail_password =
-        std::env::var("FASTMAIL_PASSWORD").context("FASTMAIL_PASSWORD not set in .env")?;
+        std::env::var("FASTMAIL_PASSWORD").context("FASTMAIL_PASSWORD not set in environment")?;
 
     let base_url = "https://myfiles.fastmail.com/Briefings";
     let client = reqwest::Client::new();

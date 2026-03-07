@@ -86,6 +86,14 @@ impl TopicClusterer {
                 Ok(topics) => return Ok(topics),
                 Err(e) => {
                     let error_msg = e.to_string();
+
+                    // Auth errors are fatal — don't retry
+                    if error_msg.contains("authentication_error")
+                        || error_msg.contains("invalid x-api-key")
+                    {
+                        anyhow::bail!("Authentication failed: {}", error_msg);
+                    }
+
                     let is_rate_limit =
                         error_msg.contains("rate_limit") || error_msg.contains("429");
 
