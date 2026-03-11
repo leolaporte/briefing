@@ -332,7 +332,7 @@ impl ClaudeSummarizer {
         eprintln!();
 
         if auth_failed.load(Ordering::Relaxed) {
-            anyhow::bail!("API authentication failed — check your ANTHROPIC_API_KEY");
+            anyhow::bail!("API authentication failed — check your CLAUDE_API_KEY");
         }
 
         Ok(results)

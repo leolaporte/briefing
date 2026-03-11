@@ -64,21 +64,15 @@ cargo install --path crates/prepare-briefing --root ~/.local
 
 ### Configure API Keys
 
-Create environment file at `~/.config/podcast-briefing/.env`:
+API keys are stored in `~/.secrets.env` (sops-encrypted with age key). The fish shell
+sources these automatically on startup via `sops-source`.
 
-```bash
-mkdir -p ~/.config/podcast-briefing
-cat > ~/.config/podcast-briefing/.env << 'EOF'
-RAINDROP_API_TOKEN=your_raindrop_token_here
-ANTHROPIC_API_KEY=your_anthropic_api_key_here
-EOF
-```
+Required variables:
+- `CLAUDE_API_KEY` — Anthropic API key
+- `RAINDROP_TOKEN` — Raindrop.io API token
+- `FASTMAIL_USER` / `FASTMAIL_PASSWORD` — Fastmail credentials
 
-The tools search for `.env` in this order:
-1. Current directory (for development)
-2. `~/.config/podcast-briefing/.env` (recommended)
-3. `~/.env` (home directory)
-4. System environment variables
+To edit: `sops ~/.secrets.env`
 
 ---
 
@@ -379,14 +373,16 @@ tail -f /tmp/podcast-briefing.log
 
 ### Credentials
 
-Create `~/.config/podcast-briefing/.env`:
+API keys are stored in `~/.secrets.env` (sops-encrypted). Required variables:
 
-```bash
-RAINDROP_API_TOKEN=your_token
-ANTHROPIC_API_KEY=your_key
-FASTMAIL_USER=user@domain.com
-FASTMAIL_PASSWORD=app_password
 ```
+CLAUDE_API_KEY=...
+RAINDROP_TOKEN=...
+FASTMAIL_USER=...
+FASTMAIL_PASSWORD=...
+```
+
+Edit with: `sops ~/.secrets.env`
 
 ---
 
@@ -484,8 +480,8 @@ The tools gracefully handle:
 
 **Missing API keys:**
 ```
-Error: RAINDROP_API_TOKEN not found
-Create ~/.config/podcast-briefing/.env with your API tokens
+Error: RAINDROP_TOKEN not found
+Add to ~/.secrets.env (sops-encrypted)
 ```
 
 **No bookmarks found:**
@@ -535,16 +531,14 @@ Clustering failed after 5 attempts: ..., using chronological fallback
 
 ## Troubleshooting
 
-### Problem: `RAINDROP_API_TOKEN not found`
+### Problem: `RAINDROP_TOKEN not found`
 
-**Solution:** Create `~/.config/podcast-briefing/.env` with your API tokens:
+**Solution:** Add your API keys to `~/.secrets.env`:
 
 ```bash
-mkdir -p ~/.config/podcast-briefing
-cat > ~/.config/podcast-briefing/.env << 'EOF'
-RAINDROP_API_TOKEN=your_token_here
-ANTHROPIC_API_KEY=your_api_key_here
-EOF
+sops ~/.secrets.env
+# Add: RAINDROP_TOKEN=your_token_here
+# Add: CLAUDE_API_KEY=your_key_here
 ```
 
 ### Problem: No bookmarks found
