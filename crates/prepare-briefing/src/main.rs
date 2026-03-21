@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use clap::Parser;
 use shared::{local_wallclock_as_utc, Story, Summary, Topic};
+use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
@@ -40,6 +41,7 @@ async fn main() -> Result<()> {
 
     println!("🔍 Parsing org-mode content...");
     let (show_name, topics) = parse_org_mode(&org_content)?;
+    let topics = deduplicate_stories(topics);
 
     println!(
         "✓ Parsed {} topics with {} total stories",
@@ -400,6 +402,36 @@ fn parse_org_mode(content: &str) -> Result<(String, Vec<Topic>)> {
     Ok((show_name, topics))
 }
 
+/// Remove stories with duplicate URLs across all topics.
+/// Keeps the first occurrence of each URL. Empty URLs are not deduplicated.
+fn deduplicate_stories(topics: Vec<Topic>) -> Vec<Topic> {
+    let mut seen_urls: HashSet<String> = HashSet::new();
+    let mut removed = 0;
+
+    let result: Vec<Topic> = topics
+        .into_iter()
+        .map(|mut topic| {
+            let before = topic.stories.len();
+            topic.stories.retain(|story| {
+                if story.url.is_empty() {
+                    true // Keep stories without URLs
+                } else {
+                    seen_urls.insert(story.url.clone())
+                }
+            });
+            removed += before - topic.stories.len();
+            topic
+        })
+        .filter(|topic| !topic.stories.is_empty())
+        .collect();
+
+    if removed > 0 {
+        println!("🗑️  Removed {} duplicate URL(s)", removed);
+    }
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -663,5 +695,111 @@ It matters for the industry.
 
         let (_, topics) = parse_org_mode(content).unwrap();
         assert_eq!(topics[0].stories[0].created, "Sat, 1 Feb 2026");
+    }
+
+    // ==================== deduplicate_stories Tests ====================
+
+    #[test]
+    fn test_deduplicate_removes_duplicate_url_in_same_topic() {
+        let topics = vec![Topic {
+            title: "Tech".to_string(),
+            stories: vec![
+                Story {
+                    title: "First".to_string(),
+                    url: "https://example.com/article".to_string(),
+                    created: "2026-01-01".to_string(),
+                    summary: Summary::Insufficient,
+                },
+                Story {
+                    title: "Duplicate".to_string(),
+                    url: "https://example.com/article".to_string(),
+                    created: "2026-01-01".to_string(),
+                    summary: Summary::Insufficient,
+                },
+            ],
+        }];
+
+        let result = deduplicate_stories(topics);
+        assert_eq!(result[0].stories.len(), 1);
+        assert_eq!(result[0].stories[0].title, "First");
+    }
+
+    #[test]
+    fn test_deduplicate_removes_duplicate_url_across_topics() {
+        let topics = vec![
+            Topic {
+                title: "Topic A".to_string(),
+                stories: vec![Story {
+                    title: "First".to_string(),
+                    url: "https://example.com/shared".to_string(),
+                    created: "2026-01-01".to_string(),
+                    summary: Summary::Insufficient,
+                }],
+            },
+            Topic {
+                title: "Topic B".to_string(),
+                stories: vec![Story {
+                    title: "Duplicate".to_string(),
+                    url: "https://example.com/shared".to_string(),
+                    created: "2026-01-01".to_string(),
+                    summary: Summary::Insufficient,
+                }],
+            },
+        ];
+
+        let result = deduplicate_stories(topics);
+        // Topic B becomes empty and is filtered out
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].title, "Topic A");
+        assert_eq!(result[0].stories.len(), 1);
+    }
+
+    #[test]
+    fn test_deduplicate_preserves_unique_urls() {
+        let topics = vec![Topic {
+            title: "Tech".to_string(),
+            stories: vec![
+                Story {
+                    title: "First".to_string(),
+                    url: "https://example.com/first".to_string(),
+                    created: "2026-01-01".to_string(),
+                    summary: Summary::Insufficient,
+                },
+                Story {
+                    title: "Second".to_string(),
+                    url: "https://example.com/second".to_string(),
+                    created: "2026-01-01".to_string(),
+                    summary: Summary::Insufficient,
+                },
+            ],
+        }];
+
+        let result = deduplicate_stories(topics);
+        assert_eq!(result[0].stories.len(), 2);
+    }
+
+    #[test]
+    fn test_deduplicate_empty_url_not_deduplicated() {
+        let topics = vec![Topic {
+            title: "Tech".to_string(),
+            stories: vec![
+                Story {
+                    title: "No URL".to_string(),
+                    url: String::new(),
+                    created: "2026-01-01".to_string(),
+                    summary: Summary::Insufficient,
+                },
+                Story {
+                    title: "Also No URL".to_string(),
+                    url: String::new(),
+                    created: "2026-01-01".to_string(),
+                    summary: Summary::Insufficient,
+                },
+            ],
+        }];
+
+        let result = deduplicate_stories(topics);
+        // Empty URLs should NOT be treated as duplicates of each other
+        assert_eq!(result[0].stories.len(), 2);
     }
 }

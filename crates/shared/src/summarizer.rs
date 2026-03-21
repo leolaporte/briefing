@@ -338,3 +338,194 @@ impl ClaudeSummarizer {
         Ok(results)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn summarizer() -> ClaudeSummarizer {
+        ClaudeSummarizer::new("fake-key".to_string()).unwrap()
+    }
+
+    // ==================== is_auth_error ====================
+
+    #[test]
+    fn test_is_auth_error_authentication_error() {
+        assert!(is_auth_error("authentication_error: invalid key"));
+    }
+
+    #[test]
+    fn test_is_auth_error_invalid_api_key() {
+        assert!(is_auth_error("invalid x-api-key provided"));
+    }
+
+    #[test]
+    fn test_is_auth_error_rate_limit() {
+        assert!(!is_auth_error("rate_limit exceeded"));
+    }
+
+    #[test]
+    fn test_is_auth_error_generic() {
+        assert!(!is_auth_error("something went wrong"));
+    }
+
+    // ==================== parse_smart_brevity — Editorial ====================
+
+    #[test]
+    fn test_parse_editorial_full() {
+        let s = summarizer();
+        let text = "\
+FORMAT: EDITORIAL
+QUOTE: \"This is huge\" -- John Doe
+LEDE: Apple announced a new chip.
+NUTGRAF: This matters because performance gains change the industry.";
+
+        let result = s.parse_smart_brevity(text).unwrap();
+        match result {
+            Summary::Editorial { lede, nutgraf, quote } => {
+                assert_eq!(lede, "Apple announced a new chip.");
+                assert!(nutgraf.contains("performance gains"));
+                assert!(quote.unwrap().contains("This is huge"));
+            }
+            _ => panic!("Expected Editorial"),
+        }
+    }
+
+    #[test]
+    fn test_parse_editorial_without_quote() {
+        let s = summarizer();
+        let text = "\
+FORMAT: EDITORIAL
+LEDE: Something happened.
+NUTGRAF: It matters for reasons.";
+
+        let result = s.parse_smart_brevity(text).unwrap();
+        match result {
+            Summary::Editorial { quote, .. } => assert!(quote.is_none()),
+            _ => panic!("Expected Editorial"),
+        }
+    }
+
+    #[test]
+    fn test_parse_editorial_missing_lede() {
+        let s = summarizer();
+        let text = "\
+FORMAT: EDITORIAL
+NUTGRAF: It matters.";
+
+        let result = s.parse_smart_brevity(text).unwrap();
+        assert!(matches!(result, Summary::Failed(_)));
+    }
+
+    #[test]
+    fn test_parse_editorial_missing_nutgraf() {
+        let s = summarizer();
+        let text = "\
+FORMAT: EDITORIAL
+LEDE: Something happened.";
+
+        let result = s.parse_smart_brevity(text).unwrap();
+        assert!(matches!(result, Summary::Failed(_)));
+    }
+
+    // ==================== parse_smart_brevity — Product ====================
+
+    #[test]
+    fn test_parse_product_full() {
+        let s = summarizer();
+        let text = "\
+FORMAT: PRODUCT
+THE_PRODUCT: A new smartwatch with health sensors.
+COST: $399.
+AVAILABILITY: March 2026.
+PLATFORMS: iOS, Android.
+QUOTE: \"Best watch ever\" -- Tim Cook";
+
+        let result = s.parse_smart_brevity(text).unwrap();
+        match result {
+            Summary::Product { the_product, cost, availability, platforms, quote } => {
+                assert!(the_product.contains("smartwatch"));
+                assert_eq!(cost, "$399.");
+                assert!(availability.contains("March"));
+                assert!(platforms.contains("iOS"));
+                assert!(quote.unwrap().contains("Best watch ever"));
+            }
+            _ => panic!("Expected Product"),
+        }
+    }
+
+    #[test]
+    fn test_parse_product_optional_fields() {
+        let s = summarizer();
+        let text = "\
+FORMAT: PRODUCT
+THE_PRODUCT: A new app for task management.";
+
+        let result = s.parse_smart_brevity(text).unwrap();
+        match result {
+            Summary::Product { cost, availability, platforms, quote, .. } => {
+                assert!(cost.is_empty());
+                assert!(availability.is_empty());
+                assert!(platforms.is_empty());
+                assert!(quote.is_none());
+            }
+            _ => panic!("Expected Product"),
+        }
+    }
+
+    #[test]
+    fn test_parse_product_missing_the_product() {
+        let s = summarizer();
+        let text = "\
+FORMAT: PRODUCT
+COST: $99.";
+
+        let result = s.parse_smart_brevity(text).unwrap();
+        assert!(matches!(result, Summary::Failed(_)));
+    }
+
+    // ==================== parse_smart_brevity — Auto-detect ====================
+
+    #[test]
+    fn test_parse_auto_detects_product_from_the_product_field() {
+        let s = summarizer();
+        // No FORMAT line, but has THE_PRODUCT — should auto-detect as Product
+        let text = "\
+THE_PRODUCT: A new laptop with M4 chip.
+COST: $1,999.";
+
+        let result = s.parse_smart_brevity(text).unwrap();
+        assert!(matches!(result, Summary::Product { .. }));
+    }
+
+    #[test]
+    fn test_parse_auto_detects_editorial_no_product_field() {
+        let s = summarizer();
+        // No FORMAT line, no THE_PRODUCT — should default to Editorial if lede/nutgraf present
+        let text = "\
+LEDE: Apple reported earnings.
+NUTGRAF: Revenue beat expectations.";
+
+        let result = s.parse_smart_brevity(text).unwrap();
+        assert!(matches!(result, Summary::Editorial { .. }));
+    }
+
+    // ==================== parse_smart_brevity — Edge cases ====================
+
+    #[test]
+    fn test_parse_empty_string() {
+        let s = summarizer();
+        let result = s.parse_smart_brevity("").unwrap();
+        assert!(matches!(result, Summary::Failed(_)));
+    }
+
+    #[test]
+    fn test_parse_insufficient_content() {
+        let s = summarizer();
+        let text = "Insufficient content for summary";
+        // This is handled in try_summarize, not parse_smart_brevity directly,
+        // but parse should still return Failed for text with no fields
+        let result = s.parse_smart_brevity(text).unwrap();
+        assert!(matches!(result, Summary::Failed(_)));
+    }
+}

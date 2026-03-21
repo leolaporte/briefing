@@ -305,3 +305,93 @@ fn parse_date_for_sorting(date_str: &str) -> Option<DateTime<FixedOffset>> {
     }
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ==================== Story / Topic Construction ====================
+
+    fn make_story(title: &str, url: &str, created: &str) -> Story {
+        Story {
+            title: title.to_string(),
+            url: url.to_string(),
+            created: created.to_string(),
+            summary: Summary::Editorial {
+                lede: "Test lede".to_string(),
+                nutgraf: "Test nutgraf".to_string(),
+                quote: None,
+            },
+        }
+    }
+
+    // ==================== parse_date_for_sorting ====================
+
+    #[test]
+    fn test_parse_date_rfc3339() {
+        let date = parse_date_for_sorting("2026-02-01T12:00:00+00:00");
+        assert!(date.is_some());
+    }
+
+    #[test]
+    fn test_parse_date_iso8601() {
+        let date = parse_date_for_sorting("2026-02-01");
+        assert!(date.is_some());
+    }
+
+    #[test]
+    fn test_parse_date_day_month_year_zero_padded() {
+        // %d is zero-padded
+        let date = parse_date_for_sorting("01 Feb 2026");
+        assert!(date.is_some());
+    }
+
+    #[test]
+    fn test_parse_date_day_month_year_double_digit() {
+        // Double-digit day works with both %e and %d
+        let date = parse_date_for_sorting("15 Feb 2026");
+        assert!(date.is_some());
+    }
+
+    #[test]
+    fn test_parse_date_empty_string() {
+        let date = parse_date_for_sorting("");
+        assert!(date.is_none());
+    }
+
+    #[test]
+    fn test_parse_date_invalid() {
+        let date = parse_date_for_sorting("not a date");
+        assert!(date.is_none());
+    }
+
+    #[test]
+    fn test_parse_date_ordering() {
+        let older = parse_date_for_sorting("2026-01-01").unwrap();
+        let newer = parse_date_for_sorting("2026-12-31").unwrap();
+        assert!(older < newer);
+    }
+
+    #[test]
+    fn test_parse_date_rfc3339_ordering() {
+        let older = parse_date_for_sorting("2026-01-15T08:00:00+00:00").unwrap();
+        let newer = parse_date_for_sorting("2026-01-15T20:00:00+00:00").unwrap();
+        assert!(older < newer);
+    }
+
+    // ==================== TopicClusterer edge cases ====================
+
+    #[test]
+    fn test_topic_clusterer_fallback_chronological() {
+        let clusterer = TopicClusterer::new("fake-key".to_string()).unwrap();
+        let stories = vec![
+            make_story("A", "https://a.com", "2026-01-01"),
+            make_story("B", "https://b.com", "2026-01-02"),
+        ];
+
+        let topics = clusterer.fallback_chronological(stories.clone());
+        assert_eq!(topics.len(), 1);
+        assert_eq!(topics[0].title, "News Stories");
+        assert_eq!(topics[0].stories.len(), 2);
+    }
+}
