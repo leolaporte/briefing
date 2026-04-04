@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, FixedOffset, NaiveDate};
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use tokio::process::Command;
 
 use crate::summarizer::Summary;
 
@@ -19,29 +19,6 @@ pub struct Topic {
     pub stories: Vec<Story>,
 }
 
-#[derive(Serialize)]
-struct ClaudeRequest {
-    model: String,
-    max_tokens: u32,
-    messages: Vec<Message>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct Message {
-    role: String,
-    content: String,
-}
-
-#[derive(Deserialize)]
-struct ClaudeResponse {
-    content: Vec<Content>,
-}
-
-#[derive(Deserialize)]
-struct Content {
-    text: String,
-}
-
 #[derive(Deserialize)]
 struct ClusteringResult {
     topics: Vec<TopicCluster>,
@@ -53,19 +30,17 @@ struct TopicCluster {
     article_indices: Vec<usize>,
 }
 
-pub struct TopicClusterer {
-    client: Client,
-    api_key: String,
+pub struct TopicClusterer;
+
+impl Default for TopicClusterer {
+    fn default() -> Self {
+        TopicClusterer
+    }
 }
 
 impl TopicClusterer {
-    pub fn new(api_key: String) -> Result<Self> {
-        let client = Client::builder()
-            .timeout(std::time::Duration::from_secs(60))
-            .build()
-            .context("Failed to create HTTP client")?;
-
-        Ok(Self { client, api_key })
+    pub fn new() -> Self {
+        TopicClusterer
     }
 
     pub async fn cluster_stories(&self, stories: Vec<Story>) -> Result<Vec<Topic>> {
@@ -183,49 +158,34 @@ Important: Every article index from 0 to {} must appear in exactly one topic."#,
             stories.len() - 1
         );
 
-        let request = ClaudeRequest {
-            model: "claude-haiku-4-5-20251001".to_string(),
-            max_tokens: 2048,
-            messages: vec![Message {
-                role: "user".to_string(),
-                content: prompt,
-            }],
-        };
+        let output = tokio::time::timeout(
+            std::time::Duration::from_secs(60),
+            Command::new("claude")
+                .args([
+                    "-p",
+                    &prompt,
+                    "--model",
+                    "haiku",
+                    "--output-format",
+                    "text",
+                    "--bare",
+                    "--no-session-persistence",
+                    "--max-turns",
+                    "1",
+                ])
+                .output(),
+        )
+        .await
+        .context("Clustering timed out after 60s")?
+        .context("Failed to run claude CLI")?;
 
-        let response = self
-            .client
-            .post("https://api.anthropic.com/v1/messages")
-            .header("x-api-key", &self.api_key)
-            .header("anthropic-version", "2023-06-01")
-            .header("content-type", "application/json")
-            .json(&request)
-            .send()
-            .await
-            .context("Failed to send request to Claude API")?;
-
-        let status = response.status();
-        if !status.is_success() {
-            let error_text = response
-                .text()
-                .await
-                .unwrap_or_else(|_| String::from("unknown error"));
-            anyhow::bail!(
-                "Claude API error (status {}): {}",
-                status.as_u16(),
-                error_text
-            );
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("claude CLI error: {}", stderr);
         }
 
-        let claude_response = response
-            .json::<ClaudeResponse>()
-            .await
-            .context("Failed to parse Claude API response")?;
-
-        let response_text = claude_response
-            .content
-            .first()
-            .map(|c| c.text.as_str())
-            .unwrap_or("");
+        let response_text_owned = String::from_utf8_lossy(&output.stdout).into_owned();
+        let response_text = response_text_owned.trim();
 
         let json_text = if let Some(start) = response_text.find('{') {
             if let Some(end) = response_text.rfind('}') {
@@ -383,7 +343,7 @@ mod tests {
 
     #[test]
     fn test_topic_clusterer_fallback_chronological() {
-        let clusterer = TopicClusterer::new("fake-key".to_string()).unwrap();
+        let clusterer = TopicClusterer::new();
         let stories = vec![
             make_story("A", "https://a.com", "2026-01-01"),
             make_story("B", "https://b.com", "2026-01-02"),

@@ -248,7 +248,7 @@ async fn main() -> Result<()> {
         );
 
         if !articles_for_summary.is_empty() {
-            let summarizer = ClaudeSummarizer::new(config.anthropic_api_key.clone())?;
+            let summarizer = ClaudeSummarizer::new();
 
             let summary_results = summarizer
                 .summarize_articles_parallel(articles_for_summary)
@@ -353,7 +353,7 @@ async fn main() -> Result<()> {
     );
 
     println!("\n🔗 Clustering stories by topic...");
-    let clusterer = TopicClusterer::new(config.anthropic_api_key)?;
+    let clusterer = TopicClusterer::new();
     let topics = clusterer
         .cluster_stories(stories)
         .await

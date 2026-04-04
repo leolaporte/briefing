@@ -1,15 +1,14 @@
 use anyhow::{Context, Result};
 use futures::stream::{self, StreamExt};
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::process::Command;
 use tokio::sync::Semaphore;
 
-fn is_auth_error(msg: &str) -> bool {
-    msg.contains("authentication_error") || msg.contains("invalid x-api-key")
-}
+const CLAUDE_MODEL: &str = "haiku";
+const SUMMARIZE_TIMEOUT: Duration = Duration::from_secs(90);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Summary {
@@ -27,44 +26,6 @@ pub enum Summary {
     },
     Insufficient,
     Failed(String),
-}
-
-#[derive(Serialize)]
-struct ClaudeRequest {
-    model: String,
-    max_tokens: u32,
-    system: Vec<SystemBlock>,
-    messages: Vec<Message>,
-}
-
-#[derive(Serialize)]
-struct SystemBlock {
-    #[serde(rename = "type")]
-    block_type: String,
-    text: String,
-    cache_control: CacheControl,
-}
-
-#[derive(Serialize)]
-struct CacheControl {
-    #[serde(rename = "type")]
-    control_type: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct Message {
-    role: String,
-    content: String,
-}
-
-#[derive(Deserialize)]
-struct ClaudeResponse {
-    content: Vec<Content>,
-}
-
-#[derive(Deserialize)]
-struct Content {
-    text: String,
 }
 
 const SUMMARIZER_SYSTEM_PROMPT: &str = r#"You are a journalist summarizing articles using the nut graph structure. Summarize the article below using the appropriate format.
@@ -93,26 +54,20 @@ QUOTE: "exact verbatim quote from the article" -- Speaker Name
 Omit the QUOTE line if there are no direct quotes with clear speaker attribution in the article."#;
 
 pub struct ClaudeSummarizer {
-    client: Client,
-    api_key: String,
     semaphore: Arc<Semaphore>,
 }
 
+impl Default for ClaudeSummarizer {
+    fn default() -> Self {
+        ClaudeSummarizer {
+            semaphore: Arc::new(Semaphore::new(2)),
+        }
+    }
+}
+
 impl ClaudeSummarizer {
-    pub fn new(api_key: String) -> Result<Self> {
-        let client = Client::builder()
-            .timeout(std::time::Duration::from_secs(60))
-            .build()
-            .context("Failed to create HTTP client")?;
-
-        // Reduce concurrency to avoid rate limits (50k tokens/min)
-        let semaphore = Arc::new(Semaphore::new(2));
-
-        Ok(Self {
-            client,
-            api_key,
-            semaphore,
-        })
+    pub fn new() -> Self {
+        ClaudeSummarizer::default()
     }
 
     pub async fn summarize_article(&self, content: &str) -> Result<Summary> {
@@ -121,36 +76,18 @@ impl ClaudeSummarizer {
         for attempt in 0..5 {
             match self.try_summarize(content).await {
                 Ok(summary) => {
-                    // Add small delay after successful request to spread load
-                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                    // Small delay after successful request to spread load
+                    tokio::time::sleep(Duration::from_millis(500)).await;
                     return Ok(summary);
                 }
                 Err(e) => {
-                    let error_msg = e.to_string();
-
-                    // Auth errors are fatal — don't retry, propagate immediately
-                    if is_auth_error(&error_msg) {
-                        anyhow::bail!("Authentication failed: {}", error_msg);
-                    }
-
-                    let is_rate_limit = error_msg.contains("rate_limit");
-
                     if attempt == 4 {
                         eprintln!("Failed to summarize: {}", e);
                         return Ok(Summary::Failed(e.to_string()));
                     }
 
-                    // Longer backoff for rate limits
-                    let backoff = if is_rate_limit {
-                        std::time::Duration::from_secs(15 * (attempt + 1) as u64)
-                    } else {
-                        std::time::Duration::from_millis(1000 * (2_u64.pow(attempt as u32)))
-                    };
-
-                    if is_rate_limit {
-                        eprintln!("Rate limit hit, waiting {:?} before retry...", backoff);
-                    }
-
+                    let backoff =
+                        Duration::from_millis(1000 * (2_u64.pow(attempt as u32)));
                     tokio::time::sleep(backoff).await;
                 }
             }
@@ -171,51 +108,36 @@ impl ClaudeSummarizer {
             content
         };
 
-        let request = ClaudeRequest {
-            model: "claude-haiku-4-5-20251001".to_string(),
-            max_tokens: 768,
-            system: vec![SystemBlock {
-                block_type: "text".to_string(),
-                text: SUMMARIZER_SYSTEM_PROMPT.to_string(),
-                cache_control: CacheControl {
-                    control_type: "ephemeral".to_string(),
-                },
-            }],
-            messages: vec![Message {
-                role: "user".to_string(),
-                content: format!("Article:\n{}", truncated_content),
-            }],
-        };
+        let prompt = format!("{}\n\nArticle:\n{}", SUMMARIZER_SYSTEM_PROMPT, truncated_content);
 
-        let response = self
-            .client
-            .post("https://api.anthropic.com/v1/messages")
-            .header("x-api-key", &self.api_key)
-            .header("anthropic-version", "2023-06-01")
-            .header("content-type", "application/json")
-            .json(&request)
-            .send()
-            .await
-            .context("Failed to send request to Claude API")?;
+        let output = tokio::time::timeout(
+            SUMMARIZE_TIMEOUT,
+            Command::new("claude")
+                .args([
+                    "-p",
+                    &prompt,
+                    "--model",
+                    CLAUDE_MODEL,
+                    "--output-format",
+                    "text",
+                    "--bare",
+                    "--no-session-persistence",
+                    "--max-turns",
+                    "1",
+                ])
+                .output(),
+        )
+        .await
+        .context("Summary timed out after 90s")?
+        .context("Failed to run claude CLI")?;
 
-        if !response.status().is_success() {
-            let error_text = response
-                .text()
-                .await
-                .unwrap_or_else(|_| String::from("unknown error"));
-            anyhow::bail!("Claude API error: {}", error_text);
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("claude CLI error: {}", stderr);
         }
 
-        let claude_response = response
-            .json::<ClaudeResponse>()
-            .await
-            .context("Failed to parse Claude API response")?;
-
-        let summary_text = claude_response
-            .content
-            .first()
-            .map(|c| c.text.as_str())
-            .unwrap_or("");
+        let summary_text = String::from_utf8_lossy(&output.stdout);
+        let summary_text = summary_text.trim();
 
         if summary_text.contains("Insufficient content for summary") {
             return Ok(Summary::Insufficient);
@@ -300,40 +222,20 @@ impl ClaudeSummarizer {
         &self,
         articles: Vec<(String, String)>,
     ) -> Result<Vec<(String, Summary)>> {
-        let auth_failed = Arc::new(AtomicBool::new(false));
-
         let results: Vec<(String, Summary)> = stream::iter(articles)
-            .map(|(url, content)| {
-                let url_clone = url.clone();
-                let auth_failed = auth_failed.clone();
-                async move {
-                    if auth_failed.load(Ordering::Relaxed) {
-                        return (url_clone, Summary::Failed("Skipped — authentication failed".to_string()));
-                    }
-
-                    let summary = match self.summarize_article(&content).await {
-                        Ok(summary) => summary,
-                        Err(e) => {
-                            let msg = e.to_string();
-                            if is_auth_error(&msg) {
-                                auth_failed.store(true, Ordering::Relaxed);
-                            }
-                            Summary::Failed(msg)
-                        }
-                    };
-                    eprint!(".");
-                    let _ = std::io::stderr().flush();
-                    (url_clone, summary)
-                }
+            .map(|(url, content)| async move {
+                let summary = match self.summarize_article(&content).await {
+                    Ok(summary) => summary,
+                    Err(e) => Summary::Failed(e.to_string()),
+                };
+                eprint!(".");
+                let _ = std::io::stderr().flush();
+                (url, summary)
             })
             .buffer_unordered(2)
             .collect()
             .await;
         eprintln!();
-
-        if auth_failed.load(Ordering::Relaxed) {
-            anyhow::bail!("API authentication failed — check your CLAUDE_API_KEY");
-        }
 
         Ok(results)
     }
@@ -344,29 +246,7 @@ mod tests {
     use super::*;
 
     fn summarizer() -> ClaudeSummarizer {
-        ClaudeSummarizer::new("fake-key".to_string()).unwrap()
-    }
-
-    // ==================== is_auth_error ====================
-
-    #[test]
-    fn test_is_auth_error_authentication_error() {
-        assert!(is_auth_error("authentication_error: invalid key"));
-    }
-
-    #[test]
-    fn test_is_auth_error_invalid_api_key() {
-        assert!(is_auth_error("invalid x-api-key provided"));
-    }
-
-    #[test]
-    fn test_is_auth_error_rate_limit() {
-        assert!(!is_auth_error("rate_limit exceeded"));
-    }
-
-    #[test]
-    fn test_is_auth_error_generic() {
-        assert!(!is_auth_error("something went wrong"));
+        ClaudeSummarizer::new()
     }
 
     // ==================== parse_smart_brevity — Editorial ====================
