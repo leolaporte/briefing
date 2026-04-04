@@ -1,13 +1,15 @@
 use anyhow::{Context, Result};
 use futures::stream::{self, StreamExt};
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use std::io::Write;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::process::Command;
 use tokio::sync::Semaphore;
 
-const CLAUDE_MODEL: &str = "haiku";
+const CLAUDE_MODEL: &str = "claude-haiku-4-5-20251001";
+const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
 const SUMMARIZE_TIMEOUT: Duration = Duration::from_secs(90);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,20 +56,24 @@ QUOTE: "exact verbatim quote from the article" -- Speaker Name
 Omit the QUOTE line if there are no direct quotes with clear speaker attribution in the article."#;
 
 pub struct ClaudeSummarizer {
+    client: Client,
+    api_key: String,
     semaphore: Arc<Semaphore>,
 }
 
-impl Default for ClaudeSummarizer {
-    fn default() -> Self {
-        ClaudeSummarizer {
-            semaphore: Arc::new(Semaphore::new(2)),
-        }
-    }
-}
-
 impl ClaudeSummarizer {
-    pub fn new() -> Self {
-        ClaudeSummarizer::default()
+    pub fn new() -> Result<Self> {
+        let api_key = std::env::var("ANTHROPIC_API_KEY")
+            .context("ANTHROPIC_API_KEY not set")?;
+        let client = Client::builder()
+            .timeout(SUMMARIZE_TIMEOUT)
+            .build()
+            .context("Failed to build HTTP client")?;
+        Ok(ClaudeSummarizer {
+            client,
+            api_key,
+            semaphore: Arc::new(Semaphore::new(2)),
+        })
     }
 
     pub async fn summarize_article(&self, content: &str) -> Result<Summary> {
@@ -110,33 +116,37 @@ impl ClaudeSummarizer {
 
         let prompt = format!("{}\n\nArticle:\n{}", SUMMARIZER_SYSTEM_PROMPT, truncated_content);
 
-        let output = tokio::time::timeout(
-            SUMMARIZE_TIMEOUT,
-            Command::new("claude")
-                .args([
-                    "-p",
-                    &prompt,
-                    "--model",
-                    CLAUDE_MODEL,
-                    "--output-format",
-                    "text",
-                    "--bare",
-                    "--no-session-persistence",
-                    "--max-turns",
-                    "1",
-                ])
-                .output(),
-        )
-        .await
-        .context("Summary timed out after 90s")?
-        .context("Failed to run claude CLI")?;
+        let body = json!({
+            "model": CLAUDE_MODEL,
+            "max_tokens": 1024,
+            "messages": [{"role": "user", "content": prompt}]
+        });
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("claude CLI error: {}", stderr);
+        let response = self
+            .client
+            .post(ANTHROPIC_API_URL)
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", "2023-06-01")
+            .header("content-type", "application/json")
+            .json(&body)
+            .send()
+            .await
+            .context("API request failed")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let text = response.text().await.unwrap_or_default();
+            anyhow::bail!("API error {}: {}", status, text);
         }
 
-        let summary_text = String::from_utf8_lossy(&output.stdout);
+        let data: Value = response
+            .json()
+            .await
+            .context("Failed to parse API response")?;
+
+        let summary_text = data["content"][0]["text"]
+            .as_str()
+            .context("No text in API response")?;
         let summary_text = summary_text.trim();
 
         if summary_text.contains("Insufficient content for summary") {
@@ -246,7 +256,11 @@ mod tests {
     use super::*;
 
     fn summarizer() -> ClaudeSummarizer {
-        ClaudeSummarizer::new()
+        ClaudeSummarizer {
+            client: Client::new(),
+            api_key: "test".to_string(),
+            semaphore: Arc::new(Semaphore::new(2)),
+        }
     }
 
     // ==================== parse_smart_brevity — Editorial ====================

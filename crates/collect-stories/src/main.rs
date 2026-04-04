@@ -248,7 +248,7 @@ async fn main() -> Result<()> {
         );
 
         if !articles_for_summary.is_empty() {
-            let summarizer = ClaudeSummarizer::new();
+            let summarizer = ClaudeSummarizer::new()?;
 
             let summary_results = summarizer
                 .summarize_articles_parallel(articles_for_summary)
