@@ -68,7 +68,7 @@ API keys are stored in `~/.secrets.env` (sops-encrypted with age key). The fish 
 sources these automatically on startup via `sops-source`.
 
 Required variables:
-- `CLAUDE_API_KEY` — Anthropic API key
+- `ANTHROPIC_API_KEY` — Anthropic API key
 - `RAINDROP_TOKEN` — Raindrop.io API token
 - `FASTMAIL_USER` / `FASTMAIL_PASSWORD` — Fastmail credentials
 
@@ -376,7 +376,7 @@ tail -f /tmp/podcast-briefing.log
 API keys are stored in `~/.secrets.env` (sops-encrypted). Required variables:
 
 ```
-CLAUDE_API_KEY=...
+ANTHROPIC_API_KEY=...
 RAINDROP_TOKEN=...
 FASTMAIL_USER=...
 FASTMAIL_PASSWORD=...
@@ -538,7 +538,7 @@ Clustering failed after 5 attempts: ..., using chronological fallback
 ```bash
 sops ~/.secrets.env
 # Add: RAINDROP_TOKEN=your_token_here
-# Add: CLAUDE_API_KEY=your_key_here
+# Add: ANTHROPIC_API_KEY=your_key_here
 ```
 
 ### Problem: No bookmarks found
