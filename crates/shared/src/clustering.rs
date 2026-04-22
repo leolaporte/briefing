@@ -1,9 +1,15 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, FixedOffset, NaiveDate};
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use tokio::process::Command;
+use serde_json::json;
+use std::time::Duration;
 
 use crate::summarizer::Summary;
+
+const CLAUDE_MODEL: &str = "claude-haiku-4-5-20251001";
+const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
+const CLUSTER_TIMEOUT: Duration = Duration::from_secs(90);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Story {
@@ -30,17 +36,20 @@ struct TopicCluster {
     article_indices: Vec<usize>,
 }
 
-pub struct TopicClusterer;
-
-impl Default for TopicClusterer {
-    fn default() -> Self {
-        TopicClusterer
-    }
+pub struct TopicClusterer {
+    client: Client,
+    api_key: String,
 }
 
 impl TopicClusterer {
-    pub fn new() -> Self {
-        TopicClusterer
+    pub fn new() -> Result<Self> {
+        let api_key = std::env::var("ANTHROPIC_API_KEY")
+            .context("ANTHROPIC_API_KEY not set")?;
+        let client = Client::builder()
+            .timeout(CLUSTER_TIMEOUT)
+            .build()
+            .context("Failed to build HTTP client")?;
+        Ok(TopicClusterer { client, api_key })
     }
 
     pub async fn cluster_stories(&self, stories: Vec<Story>) -> Result<Vec<Topic>> {
@@ -65,6 +74,7 @@ impl TopicClusterer {
                     // Auth errors are fatal — don't retry
                     if error_msg.contains("authentication_error")
                         || error_msg.contains("invalid x-api-key")
+                        || error_msg.contains("401")
                     {
                         anyhow::bail!("Authentication failed: {}", error_msg);
                     }
@@ -158,34 +168,40 @@ Important: Every article index from 0 to {} must appear in exactly one topic."#,
             stories.len() - 1
         );
 
-        let output = tokio::time::timeout(
-            std::time::Duration::from_secs(60),
-            Command::new("claude")
-                .args([
-                    "-p",
-                    &prompt,
-                    "--model",
-                    "haiku",
-                    "--output-format",
-                    "text",
-                    "--bare",
-                    "--no-session-persistence",
-                    "--max-turns",
-                    "1",
-                ])
-                .output(),
-        )
-        .await
-        .context("Clustering timed out after 60s")?
-        .context("Failed to run claude CLI")?;
+        let body = json!({
+            "model": CLAUDE_MODEL,
+            "max_tokens": 1024,
+            "messages": [{"role": "user", "content": prompt}]
+        });
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("claude CLI error: {}", stderr);
+        let response = self
+            .client
+            .post(ANTHROPIC_API_URL)
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", "2023-06-01")
+            .header("content-type", "application/json")
+            .json(&body)
+            .send()
+            .await
+            .context("Clustering API request failed")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let text = response.text().await.unwrap_or_default();
+            if status == 401 {
+                anyhow::bail!("authentication_error: {}", text);
+            }
+            anyhow::bail!("API error {}: {}", status, text);
         }
 
-        let response_text_owned = String::from_utf8_lossy(&output.stdout).into_owned();
-        let response_text = response_text_owned.trim();
+        let data: serde_json::Value = response
+            .json()
+            .await
+            .context("Failed to parse clustering API response")?;
+
+        let response_text = data["content"][0]["text"]
+            .as_str()
+            .context("No text in clustering API response")?;
 
         let json_text = if let Some(start) = response_text.find('{') {
             if let Some(end) = response_text.rfind('}') {
@@ -341,9 +357,16 @@ mod tests {
 
     // ==================== TopicClusterer edge cases ====================
 
+    fn make_clusterer() -> TopicClusterer {
+        TopicClusterer {
+            client: reqwest::Client::new(),
+            api_key: "test".to_string(),
+        }
+    }
+
     #[test]
     fn test_topic_clusterer_fallback_chronological() {
-        let clusterer = TopicClusterer::new();
+        let clusterer = make_clusterer();
         let stories = vec![
             make_story("A", "https://a.com", "2026-01-01"),
             make_story("B", "https://b.com", "2026-01-02"),

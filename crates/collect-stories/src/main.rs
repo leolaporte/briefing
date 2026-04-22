@@ -353,7 +353,7 @@ async fn main() -> Result<()> {
     );
 
     println!("\n🔗 Clustering stories by topic...");
-    let clusterer = TopicClusterer::new();
+    let clusterer = TopicClusterer::new().context("Failed to initialize topic clusterer")?;
     let topics = clusterer
         .cluster_stories(stories)
         .await
