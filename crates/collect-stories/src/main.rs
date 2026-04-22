@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use chrono::{DateTime, Datelike, Duration, Timelike, Utc, Weekday};
+use chrono::{DateTime, Datelike, Duration, Local, TimeZone, Timelike, Utc, Weekday};
 use clap::Parser;
 use shared::{
     local_wallclock_as_utc, raindrop::Bookmark, ArticleContent, ClaudeSummarizer, Config,
@@ -58,23 +58,25 @@ impl Show {
         }
     }
 
-    /// Calculate when the most recent past episode started.
-    /// Takes local wall-clock time as UTC (from `local_wallclock_as_utc`).
-    fn previous_show_start(&self, local_now: DateTime<Utc>) -> DateTime<Utc> {
-        let (target_weekday, start_hour) = match self {
-            Show::TWiT => (Weekday::Sun, 13),               // Sunday 1pm Pacific
-            Show::MacBreakWeekly => (Weekday::Tue, 10),      // Tuesday 10am Pacific
-            Show::IntelligentMachines => (Weekday::Wed, 13), // Wednesday 1pm Pacific
+    /// Calculate when the most recent past episode ended.
+    /// Takes local wall-clock time as UTC (from `local_wallclock_as_utc`) and
+    /// returns a "fake UTC" datetime whose components match local (Pacific)
+    /// time at the show's end hour.
+    fn previous_show_end(&self, local_now: DateTime<Utc>) -> DateTime<Utc> {
+        let (target_weekday, end_hour) = match self {
+            Show::TWiT => (Weekday::Sun, 17),               // Sunday 5pm Pacific
+            Show::MacBreakWeekly => (Weekday::Tue, 14),      // Tuesday 2pm Pacific
+            Show::IntelligentMachines => (Weekday::Wed, 17), // Wednesday 5pm Pacific
         };
 
         let current_day = local_now.weekday().num_days_from_monday();
         let target_day = target_weekday.num_days_from_monday();
 
         let days_back = if current_day == target_day {
-            if local_now.hour() >= start_hour {
-                0 // Show started today
+            if local_now.hour() >= end_hour {
+                0 // Show ended today
             } else {
-                7 // Before show start, go back to previous week
+                7 // Before show end, go back to previous week
             }
         } else if current_day > target_day {
             current_day - target_day
@@ -82,7 +84,11 @@ impl Show {
             7 - (target_day - current_day)
         };
 
-        local_now - Duration::days(days_back as i64)
+        let target_date = (local_now - Duration::days(days_back as i64)).date_naive();
+        target_date
+            .and_hms_opt(end_hour, 0, 0)
+            .expect("valid end-of-show time")
+            .and_utc()
     }
 }
 
@@ -142,14 +148,25 @@ async fn main() -> Result<()> {
     let local_as_utc = local_wallclock_as_utc().context("Failed to determine local timestamp")?;
 
     // Automatically determine lookback window based on show schedule
-    let previous_start = show.previous_show_start(local_as_utc);
-    // Subtract 1 day so Raindrop's "created:>" includes the show date
-    let since = previous_start - Duration::days(1);
+    let previous_end = show.previous_show_end(local_as_utc);
+    // Raindrop's `created:>` filter is exclusive and date-only. Pass end_date - 1
+    // day so bookmarks from the show's end date are returned; we filter client-
+    // side below for precise cutoff at the actual end time.
+    let since = previous_end - Duration::days(1);
+
+    // Real-UTC equivalent of the local wall-clock end time, for comparing
+    // against bookmark.created (which Raindrop returns as UTC).
+    let previous_end_utc = Local
+        .from_local_datetime(&previous_end.naive_utc())
+        .earliest()
+        .context("Failed to resolve previous show end in local time")?
+        .with_timezone(&Utc);
 
     println!(
-        "  Collecting stories since previous {} ({})",
+        "  Collecting stories since previous {} ended ({} {})",
         show_info.name,
-        previous_start.format("%A, %-d %B")
+        previous_end.format("%A, %-d %B"),
+        previous_end.format("%-l%P")
     );
 
     println!("\n📚 Fetching bookmarks from Raindrop.io...");
@@ -163,8 +180,33 @@ async fn main() -> Result<()> {
         println!(
             "No bookmarks found with tag {} since {}.",
             show_info.tag,
-            previous_start.format("%A, %-d %B %Y")
+            previous_end.format("%A, %-d %B %Y")
         );
+        return Ok(());
+    }
+
+    // Drop bookmarks created before the previous show actually ended
+    // (Raindrop's date filter is imprecise, so some boundary-day bookmarks
+    // from before the cutoff hour may be included).
+    let before_filter = bookmarks.len();
+    let bookmarks: Vec<_> = bookmarks
+        .into_iter()
+        .filter(|b| {
+            DateTime::parse_from_rfc3339(&b.created)
+                .map(|dt| dt.with_timezone(&Utc) > previous_end_utc)
+                .unwrap_or(true)
+        })
+        .collect();
+    let pre_cutoff_removed = before_filter - bookmarks.len();
+    if pre_cutoff_removed > 0 {
+        println!(
+            "🧹 Dropped {} bookmark(s) from before previous show end",
+            pre_cutoff_removed
+        );
+    }
+
+    if bookmarks.is_empty() {
+        println!("No bookmarks remain after applying precise cutoff.");
         return Ok(());
     }
 
@@ -476,11 +518,12 @@ mod tests {
         assert_eq!(info.tag, "#im");
     }
 
-    // ==================== Show::previous_show_start ====================
+    // ==================== Show::previous_show_end ====================
     //
-    // previous_show_start takes "fake UTC" — a DateTime<Utc> whose weekday/hour
-    // values represent local wall-clock time (Pacific). Returns local_now - days_back,
-    // preserving the hour. Does NOT set the hour to the show's start time.
+    // previous_show_end takes "fake UTC" — a DateTime<Utc> whose weekday/hour
+    // values represent local wall-clock time (Pacific) — and returns a fake-
+    // UTC datetime anchored at the show's end hour on the target date
+    // (Sun 17:00, Tue 14:00, Wed 17:00).
 
     /// Helper: create a "fake UTC" datetime with the given weekday and hour.
     /// Uses 2026 dates where we know the actual weekdays.
@@ -493,83 +536,75 @@ mod tests {
     }
 
     #[test]
-    fn test_previous_show_start_twit_sunday_evening() {
-        // Sunday 6pm (hour >= 13) → same day, days_back = 0
+    fn test_previous_show_end_twit_sunday_after_cutoff() {
+        // Sunday 6pm (hour >= 17) → same day, anchored at 5pm
         let show = Show::TWiT;
-        let local_now = fake_utc(2026, 3, 22, 18); // Sunday 6pm
-        let start = show.previous_show_start(local_now);
-        assert_eq!(start.weekday(), Weekday::Sun);
-        assert_eq!(start, local_now); // days_back = 0, preserves hour
+        let local_now = fake_utc(2026, 3, 22, 18);
+        let end = show.previous_show_end(local_now);
+        assert_eq!(end, fake_utc(2026, 3, 22, 17));
     }
 
     #[test]
-    fn test_previous_show_start_twit_sunday_before_cutoff() {
-        // Sunday 10am (hour < 13) → go back 7 days to previous Sunday
+    fn test_previous_show_end_twit_sunday_before_cutoff() {
+        // Sunday 3pm (hour < 17) → previous Sunday 5pm
         let show = Show::TWiT;
-        let local_now = fake_utc(2026, 3, 22, 10); // Sunday 10am
-        let start = show.previous_show_start(local_now);
-        assert_eq!(start.weekday(), Weekday::Sun);
-        assert_eq!(start, local_now - Duration::days(7));
+        let local_now = fake_utc(2026, 3, 22, 15);
+        let end = show.previous_show_end(local_now);
+        assert_eq!(end, fake_utc(2026, 3, 15, 17));
     }
 
     #[test]
-    fn test_previous_show_start_twit_monday() {
-        // Monday → 1 day back to Sunday
+    fn test_previous_show_end_twit_monday() {
+        // Monday → previous day (Sunday) at 5pm
         let show = Show::TWiT;
-        let local_now = fake_utc(2026, 3, 23, 10); // Monday 10am
-        let start = show.previous_show_start(local_now);
-        assert_eq!(start.weekday(), Weekday::Sun);
-        assert_eq!(start, local_now - Duration::days(1)); // days_back = 1
+        let local_now = fake_utc(2026, 3, 23, 10);
+        let end = show.previous_show_end(local_now);
+        assert_eq!(end, fake_utc(2026, 3, 22, 17));
     }
 
     #[test]
-    fn test_previous_show_start_twit_saturday() {
-        // Saturday → 6 days back to Sunday
+    fn test_previous_show_end_twit_saturday() {
+        // Saturday → previous Sunday 5pm (6 days back)
         let show = Show::TWiT;
-        let local_now = fake_utc(2026, 3, 21, 14); // Saturday 2pm
-        let start = show.previous_show_start(local_now);
-        assert_eq!(start.weekday(), Weekday::Sun);
-        assert_eq!(start, local_now - Duration::days(6));
+        let local_now = fake_utc(2026, 3, 21, 14);
+        let end = show.previous_show_end(local_now);
+        assert_eq!(end, fake_utc(2026, 3, 15, 17));
     }
 
     #[test]
-    fn test_previous_show_start_mbw_tuesday_after_cutoff() {
-        // Tuesday 3pm (hour >= 10) → same day, days_back = 0
+    fn test_previous_show_end_mbw_tuesday_after_cutoff() {
+        // Tuesday 3pm (hour >= 14) → same day, anchored at 2pm
         let show = Show::MacBreakWeekly;
-        let local_now = fake_utc(2026, 3, 24, 15); // Tuesday 3pm
-        let start = show.previous_show_start(local_now);
-        assert_eq!(start.weekday(), Weekday::Tue);
-        assert_eq!(start, local_now);
+        let local_now = fake_utc(2026, 3, 24, 15);
+        let end = show.previous_show_end(local_now);
+        assert_eq!(end, fake_utc(2026, 3, 24, 14));
     }
 
     #[test]
-    fn test_previous_show_start_mbw_tuesday_before_cutoff() {
-        // Tuesday 8am (hour < 10) → go back 7 days
+    fn test_previous_show_end_mbw_tuesday_before_cutoff() {
+        // Tuesday 8am (hour < 14) → previous Tuesday 2pm
         let show = Show::MacBreakWeekly;
-        let local_now = fake_utc(2026, 3, 24, 8); // Tuesday 8am
-        let start = show.previous_show_start(local_now);
-        assert_eq!(start.weekday(), Weekday::Tue);
-        assert_eq!(start, local_now - Duration::days(7));
+        let local_now = fake_utc(2026, 3, 24, 8);
+        let end = show.previous_show_end(local_now);
+        assert_eq!(end, fake_utc(2026, 3, 17, 14));
     }
 
     #[test]
-    fn test_previous_show_start_im_wednesday_after_cutoff() {
-        // Wednesday 5pm (hour >= 13) → same day, days_back = 0
+    fn test_previous_show_end_im_wednesday_after_cutoff() {
+        // Wednesday 5pm (hour >= 17) → same day, anchored at 5pm
         let show = Show::IntelligentMachines;
-        let local_now = fake_utc(2026, 3, 25, 17); // Wednesday 5pm
-        let start = show.previous_show_start(local_now);
-        assert_eq!(start.weekday(), Weekday::Wed);
-        assert_eq!(start, local_now);
+        let local_now = fake_utc(2026, 3, 25, 17);
+        let end = show.previous_show_end(local_now);
+        assert_eq!(end, fake_utc(2026, 3, 25, 17));
     }
 
     #[test]
-    fn test_previous_show_start_im_wednesday_before_cutoff() {
-        // Wednesday 10am (hour < 13) → go back 7 days
+    fn test_previous_show_end_im_wednesday_before_cutoff() {
+        // Wednesday 10am (hour < 17) → previous Wednesday 5pm
         let show = Show::IntelligentMachines;
-        let local_now = fake_utc(2026, 3, 25, 10); // Wednesday 10am
-        let start = show.previous_show_start(local_now);
-        assert_eq!(start.weekday(), Weekday::Wed);
-        assert_eq!(start, local_now - Duration::days(7));
+        let local_now = fake_utc(2026, 3, 25, 10);
+        let end = show.previous_show_end(local_now);
+        assert_eq!(end, fake_utc(2026, 3, 18, 17));
     }
 
     // ==================== deduplicate_bookmarks ====================
