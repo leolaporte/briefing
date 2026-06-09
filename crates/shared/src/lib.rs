@@ -6,6 +6,7 @@ pub mod cookies;
 pub mod extractor;
 pub mod io;
 pub mod models;
+pub mod net;
 pub mod raindrop;
 pub mod summarizer;
 pub mod time;

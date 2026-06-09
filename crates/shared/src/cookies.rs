@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use cookie_store::CookieStore;
 use rusqlite::Connection;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use url::Url;
 
 pub fn load_browser_cookies() -> Result<CookieStore> {
@@ -92,17 +92,31 @@ fn find_firefox_cookies() -> Option<PathBuf> {
     None
 }
 
+/// Open a SQLite database read-only and immutable.
+///
+/// `immutable=1` tells SQLite to assume the file cannot change, so it reads a
+/// database that is locked by a running browser (WAL mode) without taking any
+/// lock — and without us copying the entire cookie jar to a predictable, shared
+/// /tmp path (which could leak or persist on a crash).
+fn open_cookie_db(db_path: &Path) -> Result<Connection> {
+    use rusqlite::OpenFlags;
+
+    let uri = Url::from_file_path(db_path)
+        .map(|u| format!("{u}?immutable=1"))
+        .map_err(|_| anyhow::anyhow!("cookie database path is not absolute: {db_path:?}"))?;
+
+    Connection::open_with_flags(
+        &uri,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI,
+    )
+    .context("Failed to open cookies database read-only")
+}
+
 fn load_firefox_cookies_from_db(
-    db_path: &PathBuf,
+    db_path: &Path,
     cookie_store: &mut CookieStore,
 ) -> Result<usize> {
-    // Firefox locks the database, so we need to copy it first
-    let temp_path = std::env::temp_dir().join("collect-stories-firefox-cookies.db");
-
-    // Copy the database to avoid locking issues
-    std::fs::copy(db_path, &temp_path).context("Failed to copy Firefox cookies database")?;
-
-    let conn = Connection::open(&temp_path).context("Failed to open Firefox cookies database")?;
+    let conn = open_cookie_db(db_path)?;
 
     // Current time in Unix timestamp (seconds)
     let now = chrono::Utc::now().timestamp();
@@ -154,8 +168,42 @@ fn load_firefox_cookies_from_db(
         }
     }
 
-    // Clean up temp file
-    std::fs::remove_file(&temp_path).ok();
-
     Ok(count)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    #[test]
+    fn test_open_cookie_db_is_read_only_and_does_not_copy() {
+        let dir = std::env::temp_dir().join(format!("briefing-cookie-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db_path = dir.join("cookies.sqlite");
+
+        // Build a source cookie database.
+        {
+            let conn = Connection::open(&db_path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE moz_cookies (host TEXT, value TEXT);
+                 INSERT INTO moz_cookies VALUES ('example.com', 'secret');",
+            )
+            .unwrap();
+        }
+
+        let conn = open_cookie_db(&db_path).unwrap();
+
+        // It reads the real database in place (no copy needed).
+        let host: String = conn
+            .query_row("SELECT host FROM moz_cookies", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(host, "example.com");
+
+        // It must be opened read-only so we can never mutate the user's cookie jar.
+        let write = conn.execute("INSERT INTO moz_cookies VALUES ('x', 'y')", []);
+        assert!(write.is_err(), "cookie database must be opened read-only");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }

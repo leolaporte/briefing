@@ -105,10 +105,26 @@ impl ContentExtractor {
             _ => {}
         }
 
-        let html = response
-            .text()
+        // Only parse HTML/text bodies; skip binaries (PDFs, images, downloads)
+        // that would otherwise be force-decoded and fed to the HTML parser.
+        let content_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if !content_type.is_empty()
+            && !content_type.contains("html")
+            && !content_type.contains("text/")
+            && !content_type.contains("xml")
+        {
+            anyhow::bail!("Unsupported content type: {}", content_type);
+        }
+
+        let body = crate::net::read_body_capped(response, crate::net::MAX_BODY_BYTES)
             .await
-            .context("Failed to read response body")?;
+            .map_err(|e| anyhow::anyhow!("Failed to read response body: {}", e))?;
+        let html = String::from_utf8_lossy(&body).into_owned();
 
         // Extract publication date from HTML meta tags
         let published_date = self.extract_published_date(&html);

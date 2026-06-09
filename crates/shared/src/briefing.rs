@@ -148,7 +148,7 @@ impl BriefingGenerator {
                 html.push_str("    <div class=\"metadata\">\n");
                 html.push_str(&format!(
                     "      <strong>Link:</strong> <a href=\"{}\" class=\"link\" target=\"_blank\">{}</a><br>\n",
-                    story.url,
+                    Self::escape_html(&story.url),
                     Self::escape_html(&story.url)
                 ));
                 html.push_str(&format!(
@@ -503,6 +503,32 @@ mod tests {
             BriefingGenerator::escape_html("<a href=\"test\">Click & Go</a>"),
             "&lt;a href=&quot;test&quot;&gt;Click &amp; Go&lt;/a&gt;"
         );
+    }
+
+    #[test]
+    fn test_generate_escapes_url_in_href_attribute() {
+        // A malicious/redirected URL containing a double-quote must not be able to
+        // break out of the href attribute and inject markup into the briefing HTML.
+        let topics = vec![Topic {
+            title: "Topic".to_string(),
+            stories: vec![Story {
+                title: "Story".to_string(),
+                url: "https://example.com/x\"><script>alert(1)</script>".to_string(),
+                created: "2026-02-01T15:30:00Z".to_string(),
+                summary: Summary::Insufficient,
+            }],
+        }];
+
+        let date = Utc.with_ymd_and_hms(2026, 2, 1, 12, 0, 0).unwrap();
+        let html = BriefingGenerator::generate(&topics, "This Week in Tech", date);
+
+        // The raw attribute breakout must not survive.
+        assert!(
+            !html.contains("href=\"https://example.com/x\"><script>"),
+            "URL was not escaped in href attribute: {html}"
+        );
+        // The dangerous characters must be HTML-entity encoded.
+        assert!(html.contains("&quot;&gt;&lt;script&gt;"));
     }
 
     // ==================== CSV Escaping Tests ====================
