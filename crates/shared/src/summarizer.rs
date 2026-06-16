@@ -8,8 +8,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Semaphore;
 
-const CLAUDE_MODEL: &str = "claude-haiku-4-5-20251001";
-const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
+const GLM_MODEL: &str = "glm-5.2";
+const ZAI_API_URL: &str = "https://api.z.ai/api/anthropic/v1/messages";
 const SUMMARIZE_TIMEOUT: Duration = Duration::from_secs(90);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,8 +63,8 @@ pub struct ClaudeSummarizer {
 
 impl ClaudeSummarizer {
     pub fn new() -> Result<Self> {
-        let api_key = std::env::var("ANTHROPIC_API_KEY")
-            .context("ANTHROPIC_API_KEY not set")?;
+        let api_key = std::env::var("ZAI_API_KEY")
+            .context("ZAI_API_KEY not set")?;
         let client = Client::builder()
             .timeout(SUMMARIZE_TIMEOUT)
             .build()
@@ -117,15 +117,15 @@ impl ClaudeSummarizer {
         let prompt = format!("{}\n\nArticle:\n{}", SUMMARIZER_SYSTEM_PROMPT, truncated_content);
 
         let body = json!({
-            "model": CLAUDE_MODEL,
+            "model": GLM_MODEL,
             "max_tokens": 1024,
             "messages": [{"role": "user", "content": prompt}]
         });
 
         let response = self
             .client
-            .post(ANTHROPIC_API_URL)
-            .header("x-api-key", &self.api_key)
+            .post(ZAI_API_URL)
+            .header("Authorization", format!("Bearer {}", &self.api_key))
             .header("anthropic-version", "2023-06-01")
             .header("content-type", "application/json")
             .json(&body)

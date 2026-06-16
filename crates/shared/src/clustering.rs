@@ -7,8 +7,8 @@ use std::time::Duration;
 
 use crate::summarizer::Summary;
 
-const CLAUDE_MODEL: &str = "claude-haiku-4-5-20251001";
-const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
+const GLM_MODEL: &str = "glm-5.2";
+const ZAI_API_URL: &str = "https://api.z.ai/api/anthropic/v1/messages";
 const CLUSTER_TIMEOUT: Duration = Duration::from_secs(90);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,8 +43,8 @@ pub struct TopicClusterer {
 
 impl TopicClusterer {
     pub fn new() -> Result<Self> {
-        let api_key = std::env::var("ANTHROPIC_API_KEY")
-            .context("ANTHROPIC_API_KEY not set")?;
+        let api_key = std::env::var("ZAI_API_KEY")
+            .context("ZAI_API_KEY not set")?;
         let client = Client::builder()
             .timeout(CLUSTER_TIMEOUT)
             .build()
@@ -73,7 +73,7 @@ impl TopicClusterer {
 
                     // Auth errors are fatal — don't retry
                     if error_msg.contains("authentication_error")
-                        || error_msg.contains("invalid x-api-key")
+                        || error_msg.contains("invalid_api_key")
                         || error_msg.contains("401")
                     {
                         anyhow::bail!("Authentication failed: {}", error_msg);
@@ -169,15 +169,15 @@ Important: Every article index from 0 to {} must appear in exactly one topic."#,
         );
 
         let body = json!({
-            "model": CLAUDE_MODEL,
+            "model": GLM_MODEL,
             "max_tokens": 1024,
             "messages": [{"role": "user", "content": prompt}]
         });
 
         let response = self
             .client
-            .post(ANTHROPIC_API_URL)
-            .header("x-api-key", &self.api_key)
+            .post(ZAI_API_URL)
+            .header("Authorization", format!("Bearer {}", &self.api_key))
             .header("anthropic-version", "2023-06-01")
             .header("content-type", "application/json")
             .json(&body)
@@ -217,10 +217,13 @@ Important: Every article index from 0 to {} must appear in exactly one topic."#,
             serde_json::from_str(json_text).context("Failed to parse clustering JSON response")?;
 
         let mut topics = Vec::new();
+        let mut assigned = vec![false; stories.len()];
         for cluster in clustering_result.topics {
             let mut topic_stories = Vec::new();
             for &idx in &cluster.article_indices {
-                if idx < stories.len() {
+                // Skip out-of-range indices and indices the model listed twice
+                if idx < stories.len() && !assigned[idx] {
+                    assigned[idx] = true;
                     topic_stories.push(stories[idx].clone());
                 }
             }
@@ -241,6 +244,25 @@ Important: Every article index from 0 to {} must appear in exactly one topic."#,
                     stories: topic_stories,
                 });
             }
+        }
+
+        // The model is told to assign every index, but it can omit some; don't
+        // silently drop those stories from the briefing.
+        let unassigned: Vec<Story> = assigned
+            .iter()
+            .enumerate()
+            .filter(|(_, done)| !**done)
+            .map(|(idx, _)| stories[idx].clone())
+            .collect();
+        if !unassigned.is_empty() {
+            eprintln!(
+                "Clustering left {} story(ies) unassigned, adding them to \"More News\"",
+                unassigned.len()
+            );
+            topics.push(Topic {
+                title: "More News".to_string(),
+                stories: unassigned,
+            });
         }
 
         if topics.is_empty() {
