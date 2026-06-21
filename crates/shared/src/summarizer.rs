@@ -116,15 +116,20 @@ impl ClaudeSummarizer {
 
         let prompt = format!("{}\n\nArticle:\n{}", SUMMARIZER_SYSTEM_PROMPT, truncated_content);
 
+        // Endpoint/model are env-overridable for testing alternate backends
+        // (e.g. a local llama.cpp /v1/messages server). Defaults to z.ai GLM.
+        let model = std::env::var("BRIEFING_LLM_MODEL").unwrap_or_else(|_| GLM_MODEL.to_string());
+        let url = std::env::var("BRIEFING_LLM_URL").unwrap_or_else(|_| ZAI_API_URL.to_string());
+
         let body = json!({
-            "model": GLM_MODEL,
+            "model": model,
             "max_tokens": 1024,
             "messages": [{"role": "user", "content": prompt}]
         });
 
         let response = self
             .client
-            .post(ZAI_API_URL)
+            .post(&url)
             .header("Authorization", format!("Bearer {}", &self.api_key))
             .header("anthropic-version", "2023-06-01")
             .header("content-type", "application/json")
