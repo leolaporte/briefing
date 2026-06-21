@@ -63,8 +63,13 @@ pub struct ClaudeSummarizer {
 
 impl ClaudeSummarizer {
     pub fn new() -> Result<Self> {
-        let api_key = std::env::var("ZAI_API_KEY")
-            .context("ZAI_API_KEY not set")?;
+        // The API key lives in the env var named by BRIEFING_LLM_KEY_ENV
+        // (default ZAI_API_KEY), so a run can target a different backend —
+        // e.g. Anthropic via ANTHROPIC_API_KEY — without code changes.
+        let key_var = std::env::var("BRIEFING_LLM_KEY_ENV")
+            .unwrap_or_else(|_| "ZAI_API_KEY".to_string());
+        let api_key = std::env::var(&key_var)
+            .with_context(|| format!("{key_var} not set"))?;
         let client = Client::builder()
             .timeout(SUMMARIZE_TIMEOUT)
             .build()
